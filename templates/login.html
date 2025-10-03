@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SCIL - Login</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-box">
+            <h1>🔍 SCIL</h1>
+            <p class="subtitle">Sistema de Cruce de Información Laboral</p>
+            
+            {% if error %}
+            <div class="error">{{ error }}</div>
+            {% endif %}
+            
+            <form method="POST">
+                <input type="password" name="password" placeholder="Clave de acceso" required>
+                <button type="submit">Acceder</button>
+            </form>
+            
+            <div class="info">
+                <strong>Auditoría Gubernamental - Cruce de Información</strong>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

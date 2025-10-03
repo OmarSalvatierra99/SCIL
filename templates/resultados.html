@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SCIL - Resultados</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <h1>🔍 SCIL</h1>
+            <span>Sistema de Cruce de Información Laboral</span>
+        </div>
+        <div class="nav-links">
+            <a href="{{ url_for('dashboard') }}">Inicio</a>
+            <a href="{{ url_for('mostrar_resultados') }}" class="active">Resultados</a>
+            <a href="{{ url_for('logout') }}">Salir</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <h2>Resultados del Análisis</h2>
+        
+        {% if resultados %}
+        <div class="summary">
+            <div class="stat-card">
+                <h3>{{ resultados|length }}</h3>
+                <p>Empleados en múltiples entes</p>
+            </div>
+        </div>
+
+        <div class="results-grid">
+            {% for resultado in resultados %}
+            <div class="result-card">
+                <div class="result-header">
+                    <h3>RFC: {{ resultado.rfc }}</h3>
+                    <span class="badge">{{ resultado.total_entes }} entes</span>
+                </div>
+                
+                <div class="registros">
+                    {% for registro in resultado.registros %}
+                    <div class="registro">
+                        <strong>{{ registro.ente }}</strong>
+                        <p>{{ registro.nombre }}</p>
+                        <small>{{ registro.puesto }}</small>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <p>No hay resultados disponibles. Sube un archivo para analizar.</p>
+            <a href="{{ url_for('dashboard') }}" class="btn">Volver al Inicio</a>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>
