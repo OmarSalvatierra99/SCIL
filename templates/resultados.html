@@ -1,59 +1,137 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SCIL - Resultados</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <nav class="navbar">
-        <div class="nav-brand">
-            <h1>🔍 SCIL</h1>
-            <span>Sistema de Cruce de Información Laboral</span>
-        </div>
-        <div class="nav-links">
-            <a href="{{ url_for('dashboard') }}">Inicio</a>
-            <a href="{{ url_for('mostrar_resultados') }}" class="active">Resultados</a>
-            <a href="{{ url_for('logout') }}">Salir</a>
+        <div class="nav-container">
+            <div class="nav-brand">
+                <div class="logo">🔍</div>
+                <div>
+                    <h1>SCIL</h1>
+                    <span>Sistema de Cruce de Información Laboral</span>
+                </div>
+            </div>
+            <div class="nav-links">
+                <a href="{{ url_for('dashboard') }}" class="nav-link">Inicio</a>
+                <a href="{{ url_for('mostrar_resultados') }}" class="nav-link active">Resultados</a>
+                <a href="{{ url_for('logout') }}" class="nav-link">Salir</a>
+            </div>
         </div>
     </nav>
 
-    <div class="container">
-        <h2>Resultados del Análisis</h2>
-        
-        {% if resultados %}
-        <div class="summary">
-            <div class="stat-card">
-                <h3>{{ resultados|length }}</h3>
-                <p>Empleados en múltiples entes</p>
+    <main class="main-content">
+        <div class="container">
+            <div class="page-header">
+                <h2>Resultados del Análisis</h2>
+                <p>Empleados detectados en múltiples dependencias</p>
             </div>
-        </div>
 
-        <div class="results-grid">
-            {% for resultado in resultados %}
-            <div class="result-card">
-                <div class="result-header">
-                    <h3>RFC: {{ resultado.rfc }}</h3>
-                    <span class="badge">{{ resultado.total_entes }} entes</span>
-                </div>
-                
-                <div class="registros">
-                    {% for registro in resultado.registros %}
-                    <div class="registro">
-                        <strong>{{ registro.ente }}</strong>
-                        <p>{{ registro.nombre }}</p>
-                        <small>{{ registro.puesto }}</small>
+            {% if resultados %}
+            <!-- Stats Overview -->
+            <div class="overview-cards">
+                <div class="overview-card">
+                    <div class="overview-icon">👥</div>
+                    <div class="overview-content">
+                        <div class="overview-value">{{ resultados|length }}</div>
+                        <div class="overview-label">Empleados duplicados</div>
                     </div>
+                </div>
+                <div class="overview-card overview-warning">
+                    <div class="overview-icon">⚠️</div>
+                    <div class="overview-content">
+                        <div class="overview-value">{{ resultados|selectattr('tiene_conflicto_fecha')|list|length }}</div>
+                        <div class="overview-label">Con conflicto de fecha</div>
+                    </div>
+                </div>
+                {% if resultados and resultados[0].entes_detectados %}
+                <div class="overview-card overview-success">
+                    <div class="overview-icon">🏛️</div>
+                    <div class="overview-content">
+                        <div class="overview-value">{{ resultados[0].entes_detectados|length }}</div>
+                        <div class="overview-label">Entes analizados</div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Entes Detectados - Versión Scroll Compacta -->
+            {% if resultados and resultados[0].entes_detectados %}
+            <div class="entes-scroll">
+                <span class="scroll-label">Entes detectados:</span>
+                <div class="scroll-container">
+                    {% for ente in resultados[0].entes_detectados %}
+                    <span class="scroll-pill">{{ ente }}</span>
                     {% endfor %}
                 </div>
             </div>
-            {% endfor %}
+            {% endif %}
+
+            <!-- Results List - Compact Design -->
+            <div class="compact-results">
+                {% for resultado in resultados %}
+                <div class="compact-card {% if resultado.tiene_conflicto_fecha %}compact-card-alert{% endif %}">
+                    <div class="compact-header">
+                        <div class="compact-title">
+                            <h3 class="rfc-code">{{ resultado.rfc }}</h3>
+                            <div class="compact-meta">
+                                <span class="meta-badge">{{ resultado.total_entes }} entes</span>
+                                {% if resultado.tiene_conflicto_fecha %}
+                                <span class="meta-badge alert">Conflicto fecha</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Conflict Summary - Only show if there's conflict -->
+                    {% if resultado.tiene_conflicto_fecha %}
+                    <div class="date-conflict-summary">
+                        <div class="conflict-indicator">!</div>
+                        <div class="conflict-dates">
+                            {% for conflicto in resultado.conflictos_fecha %}
+                            <div class="conflict-item">
+                                <span class="conflict-ente">{{ conflicto.ente }}</span>
+                                <span class="conflict-date">{{ conflicto.fecha_ingreso or 'Sin fecha' }}</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Compact Registry List -->
+                    <div class="compact-registries">
+                        {% for registro in resultado.registros %}
+                        <div class="compact-registry {% if resultado.tiene_conflicto_fecha and registro.fecha_ingreso %}registry-highlight{% endif %}">
+                            <div class="registry-main">
+                                <div class="registry-ente">{{ registro.ente }}</div>
+                                <div class="registry-name">{{ registro.nombre }}</div>
+                                <div class="registry-position">{{ registro.puesto }}</div>
+                            </div>
+                            <div class="registry-date">
+                                <div class="date-label">Ingreso</div>
+                                <div class="date-value {% if resultado.tiene_conflicto_fecha and registro.fecha_ingreso %}date-conflict{% endif %}">
+                                    {{ registro.fecha_ingreso or '—' }}
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <div class="empty-icon">📊</div>
+                <h3>No hay resultados disponibles</h3>
+                <p>Suba un archivo Excel para comenzar el análisis</p>
+                <a href="{{ url_for('dashboard') }}" class="btn btn-primary">Volver al Inicio</a>
+            </div>
+            {% endif %}
         </div>
-        {% else %}
-        <div class="empty-state">
-            <p>No hay resultados disponibles. Sube un archivo para analizar.</p>
-            <a href="{{ url_for('dashboard') }}" class="btn">Volver al Inicio</a>
-        </div>
-        {% endif %}
-    </div>
+    </main>
 </body>
 </html>

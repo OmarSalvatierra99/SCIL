@@ -1,45 +1,55 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SCIL - Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <nav class="navbar">
-        <div class="nav-brand">
-            <h1>🔍 SCIL</h1>
-            <span>Sistema de Cruce de Información Laboral</span>
-        </div>
-        <div class="nav-links">
-            <a href="{{ url_for('dashboard') }}" class="active">Inicio</a>
-            <a href="{{ url_for('mostrar_resultados') }}">Resultados</a>
-            <a href="{{ url_for('logout') }}">Salir</a>
+        <div class="nav-container">
+            <div class="nav-brand">
+                <div class="logo">🔍</div>
+                <div>
+                    <h1>SCIL</h1>
+                    <span>Sistema de Cruce de Información Laboral</span>
+                </div>
+            </div>
+            <div class="nav-links">
+                <a href="{{ url_for('dashboard') }}" class="nav-link active">Inicio</a>
+                <a href="{{ url_for('mostrar_resultados') }}" class="nav-link">Resultados</a>
+                <a href="{{ url_for('logout') }}" class="nav-link">Salir</a>
+            </div>
         </div>
     </nav>
 
-    <div class="container">
-        <div class="upload-section">
-            <h2>Análisis de Duplicados entre Entes</h2>
-            <p>Sube el archivo Excel concentrado para detectar empleados que aparecen en múltiples dependencias</p>
-            
-            <div class="upload-box" id="uploadBox">
-                <input type="file" id="fileInput" accept=".xlsx" style="display: none;">
-                <div class="upload-placeholder">
-                    <span>📊</span>
-                    <p>Haz clic aquí o arrastra tu archivo Excel</p>
-                    <small>Formatos soportados: .xlsx</small>
-                </div>
-                <div class="upload-progress" style="display: none;">
-                    <div class="progress-bar">
-                        <div class="progress"></div>
-                    </div>
-                    <p>Procesando archivo...</p>
-                </div>
+    <main class="main-content">
+        <div class="container">
+            <div class="page-header">
+                <h2>Análisis de Duplicados</h2>
+                <p>Detecte empleados que aparecen en múltiples dependencias gubernamentales</p>
             </div>
-            
-            <div id="results" style="display: none;"></div>
+
+            <div class="upload-card">
+                <div class="upload-area" id="uploadBox">
+                    <input type="file" id="fileInput" accept=".xlsx" class="file-input">
+                    <div class="upload-content">
+                        <div class="upload-icon">📊</div>
+                        <h3>Subir archivo Excel</h3>
+                        <p>Arrastre o haga clic para seleccionar el archivo concentrado</p>
+                        <small>Formato soportado: .xlsx</small>
+                    </div>
+                    <div class="upload-progress" style="display: none;">
+                        <div class="progress-spinner"></div>
+                        <p>Procesando archivo...</p>
+                    </div>
+                </div>
+
+                <div id="results" class="results-container" style="display: none;"></div>
+            </div>
         </div>
-    </div>
+    </main>
 
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>

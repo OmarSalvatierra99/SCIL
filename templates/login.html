@@ -1,26 +1,35 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
-    <title>SCIL - Login</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SCIL - Acceso</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <div class="login-container">
-        <div class="login-box">
-            <h1>🔍 SCIL</h1>
-            <p class="subtitle">Sistema de Cruce de Información Laboral</p>
-            
+        <div class="login-card">
+            <div class="login-header">
+                <div class="logo">🔍</div>
+                <h1>SCIL</h1>
+                <p class="subtitle">Sistema de Cruce de Información Laboral</p>
+            </div>
+
             {% if error %}
-            <div class="error">{{ error }}</div>
+            <div class="alert alert-error">
+                {{ error }}
+            </div>
             {% endif %}
-            
-            <form method="POST">
-                <input type="password" name="password" placeholder="Clave de acceso" required>
-                <button type="submit">Acceder</button>
+
+            <form method="POST" class="login-form">
+                <div class="form-group">
+                    <input type="password" name="password" placeholder="Ingrese la clave de acceso" required class="form-input">
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">Acceder al Sistema</button>
             </form>
-            
-            <div class="info">
-                <strong>Auditoría Gubernamental - Cruce de Información</strong>
+
+            <div class="login-footer">
+                <p>Auditoría Gubernamental - Cruce de Información</p>
             </div>
         </div>
     </div>
