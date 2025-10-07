@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SCIL - Resultados Laborales</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <nav class="navbar">
+    <div class="nav-container">
+      <div class="nav-brand">
+        <img src="{{ url_for('static', filename='ofs_logo.png') }}" alt="OFS" style="height:40px;">
+        <div><h1>SCIL</h1><span>Patrones Laborales</span></div>
+      </div>
+      <div class="nav-links">
+        <a href="{{ url_for('dashboard') }}" class="nav-link">Inicio</a>
+        <a href="{{ url_for('mostrar_resultados') }}" class="nav-link active">Laborales</a>
+        <a href="{{ url_for('mostrar_resultados_horarios') }}" class="nav-link">Horarios</a>
+        <a href="{{ url_for('logout') }}" class="nav-link">Salir</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="main-content">
+    <div class="container">
+      <div class="page-header">
+        <h2>Patrones Laborales Detectados</h2>
+        <p>Coincidencias en fechas de ingreso/egreso entre entes</p>
+      </div>
+
+      <div class="search-section">
+        <div class="search-box-minimal">
+          <input type="text" id="searchInput" placeholder="Buscar por RFC o descripción..." value="{{ busqueda }}">
+          <button onclick="filterResults()" class="btn btn-primary">Buscar</button>
+        </div>
+        <div class="export-minimal">
+          <a href="/exportar/csv/patrones" class="btn btn-secondary">Exportar CSV</a>
+        </div>
+      </div>
+
+      {% if resultados %}
+      <div class="results-minimal">
+        {% for r in resultados %}
+        <div class="result-minimal-card">
+          <div class="result-minimal-header">
+            <div><h3>{{ r.rfc }}</h3><span class="patron-badge">{{ r.tipo_patron|replace('_',' ')|title }}</span></div>
+            <div class="severity-minimal"><span class="severity-dot severity-{{ r.severidad }}"></span>Severidad {{ r.severidad }}</div>
+          </div>
+          <div class="result-minimal-content">
+            <p>{{ r.descripcion }}</p>
+            <div class="entes-minimal">
+              {% for e in r.entes %}<span class="ente-tag">{{ e }}</span>{% endfor %}
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty-state-minimal">
+        <div class="empty-icon">📭</div>
+        <h3>No hay resultados</h3>
+      </div>
+      {% endif %}
+    </div>
+  </main>
+
+  <script>
+    function filterResults() {
+      const search = document.getElementById('searchInput').value;
+      const params = new URLSearchParams();
+      if (search) params.set('search', search);
+      window.location.href = '?' + params.toString();
+    }
+  </script>
+</body>
+</html>
+
