@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OFS Tlaxcala | Acceso SCIL</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="login-body">
+  <div class="login-container">
+    <div class="login-card">
+      <div class="login-header">
+        <div class="login-logo">
+          <img src="{{ url_for('static', filename='ofs_logo.png') }}" alt="OFS Logo" style="width:70px;margin-bottom:1rem;">
+        </div>
+        <h1 class="login-title">SCIL</h1>
+        <p class="login-subtitle">Sistema de Cruce de Información Laboral<br>Órgano de Fiscalización Superior del Estado de Tlaxcala</p>
+      </div>
+
+      {% if error %}
+      <div class="alert alert-error">{{ error }}</div>
+      {% endif %}
+
+      <form method="POST" class="login-form">
+        <div class="form-group">
+          <input type="password" name="password" class="form-input login-input" placeholder="Clave de acceso" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-login">Acceder</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>
+

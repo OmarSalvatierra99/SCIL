@@ -1,0 +1,26 @@
+# Entorno virtual
+venv/
+ENV/
+env/
+
+# Cachés de Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Archivos de base de datos locales
+*.db
+*.sqlite3
+
+# Archivos de subida (no suelen versionarse)
+uploads/
+
+# Archivos de configuración de sistema/editor
+*.log
+*.env
+*.DS_Store
+*.swp
+.vscode/
+.idea/
+
