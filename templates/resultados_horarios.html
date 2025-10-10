@@ -5,13 +5,39 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SCIL - Cruces de Horario</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    .detalle-tabla {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 0.75rem;
+      font-size: 0.88rem;
+    }
+    .detalle-tabla th, .detalle-tabla td {
+      border: 1px solid var(--color-border);
+      padding: 0.5rem 0.75rem;
+      text-align: left;
+    }
+    .detalle-tabla th {
+      background: var(--color-bg);
+      font-weight: 600;
+    }
+    .sin-egreso {
+      color: var(--color-error);
+      font-weight: 600;
+    }
+    .detalle-header {
+      font-weight: 600;
+      color: var(--color-primary);
+      margin-top: 1rem;
+    }
+  </style>
 </head>
 <body>
   <nav class="navbar">
     <div class="nav-container">
       <div class="nav-brand">
         <img src="{{ url_for('static', filename='ofs_logo.png') }}" alt="OFS" style="height:40px;">
-        <div><h1>SCIL</h1><span>Cruce de Horarios</span></div>
+        <div><h1>SCIL</h1><span>Cruces de Horarios</span></div>
       </div>
       <div class="nav-links">
         <a href="{{ url_for('dashboard') }}" class="nav-link">Inicio</a>
@@ -26,12 +52,12 @@
     <div class="container">
       <div class="page-header">
         <h2>Cruces de Horarios Detectados</h2>
-        <p>Docentes con empalmes de horario en distintos planteles</p>
+        <p>Docentes con coincidencias horarias entre distintos planteles o dentro del mismo ente</p>
       </div>
 
       <div class="search-section">
         <div class="search-box-minimal">
-          <input type="text" id="searchInput" placeholder="Buscar por RFC o nombre..." value="{{ busqueda }}">
+          <input type="text" id="searchInput" placeholder="Buscar por RFC, nombre o plantel..." value="{{ busqueda }}">
           <button onclick="filterResults()" class="btn btn-primary">Buscar</button>
         </div>
         <div class="export-minimal">
@@ -44,14 +70,75 @@
         {% for r in resultados %}
         <div class="result-minimal-card">
           <div class="result-minimal-header">
-            <h3>{{ r.rfc }}</h3>
-            <div class="severity-minimal"><span class="severity-dot severity-4"></span>Solape detectado</div>
+            <div>
+              <h3>{{ r.rfc }}</h3>
+              {% if r.nombre %}
+                <p style="color: var(--color-muted); font-size: 0.9rem;">{{ r.nombre }}</p>
+              {% endif %}
+              <span class="patron-badge severity-{{ r.severidad }}">
+                {{ r.tipo_patron|replace('_',' ')|title }}
+              </span>
+            </div>
+            <div class="severity-minimal">
+              <span class="severity-dot severity-{{ r.severidad }}"></span>
+              {% if r.severidad == 5 %}
+                Crítico
+              {% elif r.severidad == 4 %}
+                Alto
+              {% elif r.severidad == 3 %}
+                Medio
+              {% else %}
+                Bajo
+              {% endif %}
+            </div>
           </div>
+
           <div class="result-minimal-content">
             <p>{{ r.descripcion }}</p>
-            <div class="entes-minimal">
-              {% for e in r.planteles %}<span class="ente-tag">{{ e }}</span>{% endfor %}
+
+            {% if r.fecha_comun %}
+            <p style="font-size:0.9rem;color:var(--color-muted);margin-top:0.3rem;">
+              <strong>Día:</strong> {{ r.fecha_comun }}
+            </p>
+            {% endif %}
+
+            <div class="entes-minimal" style="margin-top:0.5rem;">
+              {% for e in r.entes %}
+                <span class="ente-tag">{{ e }}</span>
+              {% endfor %}
             </div>
+
+            {% if r.registros %}
+            <div class="detalle-header">Detalles detectados:</div>
+            <table class="detalle-tabla">
+              <thead>
+                <tr>
+                  <th>Ente</th>
+                  <th>Plantel</th>
+                  <th>Día</th>
+                  <th>Hora Entrada</th>
+                  <th>Hora Salida</th>
+                  <th>Fecha Ingreso</th>
+                  <th>Fecha Egreso</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for reg in r.registros %}
+                <tr>
+                  <td>{{ reg.ente }}</td>
+                  <td>{{ reg.plantel or '—' }}</td>
+                  <td>{{ reg.dia_semana or '—' }}</td>
+                  <td>{{ reg.hora_entrada or '—' }}</td>
+                  <td>{{ reg.hora_salida or '—' }}</td>
+                  <td>{{ reg.fecha_ingreso or '—' }}</td>
+                  <td class="{% if not reg.fecha_egreso %}sin-egreso{% endif %}">
+                    {{ reg.fecha_egreso or 'Sin Egreso' }}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% endif %}
           </div>
         </div>
         {% endfor %}
@@ -59,7 +146,7 @@
       {% else %}
       <div class="empty-state-minimal">
         <div class="empty-icon">🕓</div>
-        <h3>No se detectaron cruces</h3>
+        <h3>No se detectaron cruces de horario</h3>
       </div>
       {% endif %}
     </div>
