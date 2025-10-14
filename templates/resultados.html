@@ -30,6 +30,24 @@
       color: var(--color-primary);
       margin-top: 1rem;
     }
+    .pagination {
+      display:flex;
+      justify-content:center;
+      gap:.5rem;
+      margin-top:2rem;
+    }
+    .pagination a {
+      padding:.5rem 1rem;
+      border:1px solid var(--color-border);
+      border-radius:6px;
+      color:var(--color-primary);
+      text-decoration:none;
+      font-weight:500;
+    }
+    .pagination a.active {
+      background:var(--color-primary);
+      color:#fff;
+    }
   </style>
 </head>
 <body>
@@ -37,12 +55,12 @@
     <div class="nav-container">
       <div class="nav-brand">
         <img src="{{ url_for('static', filename='ofs_logo.png') }}" alt="OFS" style="height:40px;">
-        <div><h1>SCIL</h1><span>Patrones Laborales</span></div>
+        <div><h1>SCIL</h1><span>Relaciones Laborales</span></div>
       </div>
       <div class="nav-links">
         <a href="{{ url_for('dashboard') }}" class="nav-link">Inicio</a>
-        <a href="{{ url_for('mostrar_resultados') }}" class="nav-link active">Laborales</a>
-        <a href="{{ url_for('mostrar_resultados_horarios') }}" class="nav-link">Horarios</a>
+        <a href="{{ url_for('resultados_patrones') }}" class="nav-link active">Laborales</a>
+        <a href="{{ url_for('resultados_horarios') }}" class="nav-link">Horarios</a>
         <a href="{{ url_for('logout') }}" class="nav-link">Salir</a>
       </div>
     </div>
@@ -52,7 +70,7 @@
     <div class="container">
       <div class="page-header">
         <h2>Resultados de Auditoría Laboral</h2>
-        <p>Relaciones laborales detectadas con posibles inconsistencias o duplicidades</p>
+        <p>Relaciones laborales detectadas con posibles inconsistencias o cruces</p>
       </div>
 
       <div class="search-section">
@@ -61,7 +79,7 @@
           <button onclick="filterResults()" class="btn btn-primary">Buscar</button>
         </div>
         <div class="export-minimal">
-          <a href="/exportar/csv/patrones" class="btn btn-secondary">Exportar CSV</a>
+          <a href="/exportar/patrones" class="btn btn-secondary">Exportar</a>
         </div>
       </div>
 
@@ -75,13 +93,7 @@
               {% if r.nombre %}
                 <p style="color: var(--color-muted); font-size: 0.9rem;">{{ r.nombre }}</p>
               {% endif %}
-              <span class="patron-badge severity-{{ r.severidad }}">
-                {{ r.tipo_patron|replace('_',' ')|title }}
-              </span>
-            </div>
-            <div class="severity-minimal">
-              <span class="severity-dot severity-{{ r.severidad }}"></span>
-              {% if r.severidad == 5 %}Crítico{% elif r.severidad == 4 %}Alto{% elif r.severidad == 3 %}Medio{% else %}Bajo{% endif %}
+              <span class="patron-badge">{{ r.tipo_patron|replace('_',' ')|title }}</span>
             </div>
           </div>
 
@@ -131,6 +143,21 @@
         </div>
         {% endfor %}
       </div>
+
+      {% if total_paginas > 1 %}
+      <div class="pagination">
+        {% if pagina_actual > 1 %}
+          <a href="?page={{ pagina_actual - 1 }}">← Anterior</a>
+        {% endif %}
+        {% for i in range(1, total_paginas + 1) %}
+          <a href="?page={{ i }}" class="{% if i == pagina_actual %}active{% endif %}">{{ i }}</a>
+        {% endfor %}
+        {% if pagina_actual < total_paginas %}
+          <a href="?page={{ pagina_actual + 1 }}">Siguiente →</a>
+        {% endif %}
+      </div>
+      {% endif %}
+
       {% else %}
       <div class="empty-state-minimal">
         <div class="empty-icon">📭</div>

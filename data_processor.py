@@ -1,16 +1,10 @@
-# ========================================================
-# data_processor.py - SCIL / Auditoría de relaciones laborales
-# Enfoque auditor:
-#  - No puede haber dos relaciones ACTIVAS a la vez en entes distintos.
-#  - No puede haber dos periodos solapados en el MISMO ente (ni duplicados).
-#  - Egreso < Ingreso es incoherencia grave.
-#  - Si falta FECHA_EGRESO => relación ACTIVA (debe notificarse).
-#  - Si hay reingresos al mismo ente, sólo son válidos si NO se solapan.
-# Salida compatible con templates actuales.
-# ========================================================
+# =========================================================
+# data_processor.py — SCIL / Auditoría de relaciones laborales
+# Revisión 2025: lenguaje auditor claro (“cruce”, no “solape”)
+# =========================================================
 
 import pandas as pd
-from collections import defaultdict, Counter
+from collections import defaultdict
 import re
 from datetime import datetime, date
 
@@ -22,7 +16,6 @@ class DataProcessor:
     # LIMPIEZA / NORMALIZACIÓN
     # ----------------------------------------------------
     def limpiar_rfc(self, rfc):
-        """Limpia y estandariza un RFC (10-13 caracteres alfanum)."""
         if pd.isna(rfc):
             return None
         rfc_s = str(rfc).strip().upper()
@@ -30,7 +23,6 @@ class DataProcessor:
         return rfc_s if 10 <= len(rfc_s) <= 13 else None
 
     def limpiar_fecha(self, fecha):
-        """Convierte fecha a 'YYYY-MM-DD'. Si no se puede, retorna None."""
         if pd.isna(fecha):
             return None
         if isinstance(fecha, datetime):
@@ -42,7 +34,6 @@ class DataProcessor:
         if not s or s.lower() in ['nan', 'nat', 'none', 'null']:
             return None
         try:
-            # Serial de Excel
             if isinstance(fecha, (int, float)):
                 f = pd.to_datetime(fecha, unit='D', origin='1899-12-30')
                 return f.strftime('%Y-%m-%d')
@@ -52,7 +43,6 @@ class DataProcessor:
             return None
 
     def _to_date(self, ymd):
-        """Convierte 'YYYY-MM-DD' a date. None -> None."""
         if not ymd:
             return None
         try:
@@ -61,22 +51,13 @@ class DataProcessor:
             return None
 
     # ----------------------------------------------------
-    # ENTES / COLUMNAS
+    # DETECCIÓN DE COLUMNAS
     # ----------------------------------------------------
     def extraer_ente_de_nombre_hoja(self, sheet_name):
-        """Prefijo previo al '_' se toma como ente."""
         partes = str(sheet_name).split('_')
         return partes[0] if partes else str(sheet_name)
 
     def detectar_columnas(self, df, ente):
-        """
-        Detecta columnas clave:
-        - RFC
-        - NOMBRE
-        - PUESTO
-        - FECHA_INGRESO
-        - FECHA_EGRESO
-        """
         cache_key = f"{ente}_{hash(str(df.columns.tolist()))}"
         if cache_key in self.column_cache:
             return self.column_cache[cache_key]
@@ -85,21 +66,9 @@ class DataProcessor:
         rfc_col = next((c for c in cols if 'RFC' in c.upper()), None)
         nombre_col = next((c for c in cols if 'NOMBRE' in c.upper()), None)
         puesto_col = next((c for c in cols if 'PUESTO' in c.upper()), None)
-
-        fecha_ingreso_col = next(
-            (c for c in cols
-             if any(k in c.upper() for k in ['FECHA', 'FCHA'])
-             and any(k in c.upper() for k in ['INGRESO', 'ING'])),
-            None
-        )
-        fecha_egreso_col = next(
-            (c for c in cols
-             if any(k in c.upper() for k in ['FECHA', 'FCHA'])
-             and any(k in c.upper() for k in ['EGRESO', 'EGR', 'BAJA', 'SALIDA'])),
-            None
-        )
-
-        out = (rfc_col, nombre_col, puesto_col, fecha_ingreso_col, fecha_egreso_col)
+        f_ing = next((c for c in cols if 'INGRESO' in c.upper() and 'FECHA' in c.upper()), None)
+        f_egr = next((c for c in cols if any(x in c.upper() for x in ['EGRESO','BAJA','SALIDA']) and 'FECHA' in c.upper()), None)
+        out = (rfc_col, nombre_col, puesto_col, f_ing, f_egr)
         self.column_cache[cache_key] = out
         return out
 
@@ -107,41 +76,23 @@ class DataProcessor:
     # PROCESAMIENTO PRINCIPAL
     # ----------------------------------------------------
     def procesar_archivo(self, filepath, with_structure=False):
-        """
-        Lee el Excel completo y devuelve:
-        - resultados: lista de hallazgos (patrones/incoherencias)
-        - estructura (opcional): resumen por hoja/ENTE
-        Reglas auditor:
-          * SOLAPE_ENTRE_ENTES (sev 5)
-          * SOLAPE_MISMO_ENTE (sev 5)
-          * DUPLICADO_MISMO_ENTE (sev 4)
-          * EGRESO_ANTES_INGRESO (sev 5)
-          * RELACION_ACTIVA_SIN_EGRESO (sev 3)
-        """
         xl = pd.ExcelFile(filepath)
-        entes_rfc = defaultdict(list)   # rfc -> [registros]
+        entes_rfc = defaultdict(list)
         entes_detectados = set()
         estructura = []
 
-        print("📊 Iniciando procesamiento (modo auditor)...")
+        print("📊 Iniciando procesamiento laboral...")
 
         for sheet in xl.sheet_names:
             ente = self.extraer_ente_de_nombre_hoja(sheet)
             entes_detectados.add(ente)
             df = xl.parse(sheet)
-            rfc_col, nombre_col, puesto_col, f_ing_col, f_egr_col = self.detectar_columnas(df, ente)
-
-            print(f"  🔎 Hoja: {sheet} | Ente: {ente} | RFC: {rfc_col} | Ing: {f_ing_col} | Egr: {f_egr_col}")
+            rfc_col, nombre_col, puesto_col, f_ing, f_egr = self.detectar_columnas(df, ente)
 
             if with_structure:
                 estructura.append({
-                    'hoja': sheet,
-                    'ente': ente,
-                    'total_filas': len(df),
-                    'columnas': list(map(str, df.columns)),
-                    'rfc_col': rfc_col,
-                    'fecha_ingreso_col': f_ing_col,
-                    'fecha_egreso_col': f_egr_col
+                    'hoja': sheet, 'ente': ente, 'total_filas': len(df),
+                    'rfc_col': rfc_col, 'fecha_ingreso_col': f_ing, 'fecha_egreso_col': f_egr
                 })
 
             if not rfc_col:
@@ -151,8 +102,8 @@ class DataProcessor:
                 rfc = self.limpiar_rfc(row.get(rfc_col))
                 if not rfc:
                     continue
-                fi = self.limpiar_fecha(row.get(f_ing_col)) if f_ing_col else None
-                fe = self.limpiar_fecha(row.get(f_egr_col)) if f_egr_col else None
+                fi = self.limpiar_fecha(row.get(f_ing)) if f_ing else None
+                fe = self.limpiar_fecha(row.get(f_egr)) if f_egr else None
 
                 entes_rfc[rfc].append({
                     'ente': ente,
@@ -161,174 +112,78 @@ class DataProcessor:
                     'puesto': str(row.get(puesto_col, '') or ''),
                     'fecha_ingreso': fi,
                     'fecha_egreso': fe,
-                    'rfc_original': str(row.get(rfc_col, '')),
-                    'fecha_ingreso_columna': f_ing_col or 'No encontrada',
-                    'fecha_egreso_columna': f_egr_col or 'No encontrada'
+                    'rfc_original': str(row.get(rfc_col, ''))
                 })
 
-        print(f"🎯 RFCs únicos: {len(entes_rfc)} | Entes detectados: {len(entes_detectados)}")
-
         resultados = []
-
-        for rfc, regs in entes_rfc.items():
-            # --- contexto por RFC ---
-            entes_del_rfc = sorted({r['ente'] for r in regs})
-
-            # 1) incoherencias básicas registro a registro
-            incoh = self._incoherencias_basicas(regs)
-            for p in incoh:
-                p['entes_detectados'] = entes_del_rfc
-            resultados.extend(incoh)
-
-            # 2) análisis por ente (duplicados/solapes internos)
-            por_ente = defaultdict(list)
-            for r in regs:
-                por_ente[r['ente']].append(r)
-
-            for ente, lista in por_ente.items():
-                patrones_mismo = self._conflictos_mismo_ente(lista)
-                for p in patrones_mismo:
-                    p['entes_detectados'] = entes_del_rfc
-                resultados.extend(patrones_mismo)
-
-            # 3) solapamientos entre entes
-            solapes_cross = self._solapes_entre_entes(por_ente)
-            for p in solapes_cross:
-                p['entes_detectados'] = entes_del_rfc
-            resultados.extend(solapes_cross)
-
-            # 4) notificación de relaciones activas sin egreso (informativa)
-            activos = [r for r in regs if r.get('fecha_egreso') is None]
+        for rfc, registros in entes_rfc.items():
+            entes_del_rfc = sorted({r['ente'] for r in registros})
+            resultados.extend(self._incoherencias_basicas(registros))
+            resultados.extend(self._cruces_mismo_ente(registros, entes_del_rfc))
+            resultados.extend(self._cruces_entre_entes(registros, entes_del_rfc))
+            activos = [r for r in registros if r.get('fecha_egreso') is None]
             if activos:
                 resultados.append({
-                    'rfc': regs[0]['rfc_original'],
+                    'rfc': registros[0]['rfc_original'],
+                    'nombre': registros[0].get('nombre',''),
                     'registros': activos,
                     'total_entes': len({r['ente'] for r in activos}),
                     'entes': list({r['ente'] for r in activos}),
-                    'fecha_comun': 'RELACIONES_ACTIVAS',
-                    'tipo_patron': 'RELACION_ACTIVA_SIN_EGRESO',
-                    'severidad': 3,
-                    'descripcion': 'Existen relaciones activas (sin FECHA_EGRESO) que deben ser verificadas',
-                    'entes_detectados': entes_del_rfc
+                    'fecha_comun': 'RELACIÓN ACTIVA',
+                    'tipo_patron': 'RELACION_ACTIVA',
+                    'descripcion': 'El trabajador mantiene una relación activa sin fecha de egreso registrada.'
                 })
 
-        # Ordenar por prioridad auditoría
-        resultados.sort(key=lambda x: (x['severidad'], x.get('total_entes', 1)), reverse=True)
-        print(f"📈 Listo: {len(resultados)} hallazgos generados (auditoría).")
-
+        resultados.sort(key=lambda x: x.get('tipo_patron',''))
+        print(f"📈 {len(resultados)} hallazgos laborales generados.")
         return (resultados, estructura) if with_structure else resultados
 
     # ----------------------------------------------------
     # REGLAS AUDITORAS
     # ----------------------------------------------------
     def _incoherencias_basicas(self, registros):
-        """
-        - EGRESO_ANTES_INGRESO (sev 5)
-        """
         hallazgos = []
         for r in registros:
-            fi, fe = r.get('fecha_ingreso'), r.get('fecha_egreso')
-            dfi, dfe = self._to_date(fi), self._to_date(fe)
-            if dfi and dfe and dfe < dfi:
+            fi, fe = self._to_date(r.get('fecha_ingreso')), self._to_date(r.get('fecha_egreso'))
+            if fi and fe and fe < fi:
                 hallazgos.append({
                     'rfc': r['rfc_original'],
+                    'nombre': r.get('nombre',''),
                     'registros': [r],
-                    'total_entes': 1,
                     'entes': [r['ente']],
-                    'fecha_comun': f"{fi}→{fe}",
-                    'tipo_patron': 'EGRESO_ANTES_INGRESO',
-                    'severidad': 5,
-                    'descripcion': 'Fecha de egreso anterior a la de ingreso (incoherencia grave)'
+                    'fecha_comun': f"{r['fecha_ingreso']}→{r['fecha_egreso']}",
+                    'tipo_patron': 'FECHAS_INVERTIDAS',
+                    'descripcion': 'La fecha de egreso es anterior a la de ingreso.'
                 })
         return hallazgos
 
-    def _conflictos_mismo_ente(self, registros_ente):
-        """
-        Dentro del MISMO ente para un RFC:
-        - DUPLICADO_MISMO_ENTE (fi,fe) idénticos en >1 registros (sev 4)
-        - SOLAPE_MISMO_ENTE (periodos que se traslapan) (sev 5)
-        Nota: reingreso es válido si NO hay solape.
-        """
+    def _cruces_mismo_ente(self, registros, entes_del_rfc):
         hallazgos = []
-        # Duplicados exactos por pareja (fi,fe)
-        by_pair = defaultdict(list)
-        for r in registros_ente:
-            key = (r.get('fecha_ingreso'), r.get('fecha_egreso'))
-            by_pair[key].append(r)
-        for pair, items in by_pair.items():
-            if len(items) > 1:
-                hallazgos.append({
-                    'rfc': items[0]['rfc_original'],
-                    'registros': items,
-                    'total_entes': 1,
-                    'entes': [items[0]['ente']],
-                    'fecha_comun': f"{pair[0]}→{pair[1]}",
-                    'tipo_patron': 'DUPLICADO_MISMO_ENTE',
-                    'severidad': 4,
-                    'descripcion': 'Registros duplicados con las mismas fechas dentro del mismo ente'
-                })
+        por_ente = defaultdict(list)
+        for r in registros:
+            por_ente[r['ente']].append(r)
 
-        # Solapes internos
-        # Construir periodos como (start, end_inclusive, record)
-        periods = []
-        for r in registros_ente:
-            fi, fe = self._to_date(r.get('fecha_ingreso')), self._to_date(r.get('fecha_egreso'))
-            if not fi and not fe:
-                # si no hay fechas, no podemos evaluar solape
-                continue
-            start = fi or self._to_date(r.get('fecha_egreso'))  # raro, pero evita None total
-            end = fe or date.max  # sin egreso = activo
-            if not start:
-                # si no hay ingreso, pero sí egreso, ponemos start=egreso (no podremos detectar bien, pero evitamos crashes)
-                start = end
-            periods.append((start, end, r))
+        for ente, lista in por_ente.items():
+            # Duplicados exactos
+            pares = defaultdict(list)
+            for r in lista:
+                key = (r.get('fecha_ingreso'), r.get('fecha_egreso'))
+                pares[key].append(r)
+            for pair, items in pares.items():
+                if len(items) > 1:
+                    hallazgos.append({
+                        'rfc': items[0]['rfc_original'],
+                        'nombre': items[0].get('nombre',''),
+                        'registros': items,
+                        'entes': [ente],
+                        'fecha_comun': f"{pair[0]}→{pair[1]}",
+                        'tipo_patron': 'REGISTRO_DUPLICADO',
+                        'descripcion': 'Registros duplicados dentro del mismo ente.'
+                    })
 
-        # verificar solapes (inclusive)
-        overlapping_set = set()
-        for i in range(len(periods)):
-            a_s, a_e, a_r = periods[i]
-            for j in range(i+1, len(periods)):
-                b_s, b_e, b_r = periods[j]
-                if self._overlap(a_s, a_e, b_s, b_e):
-                    overlapping_set.add(i); overlapping_set.add(j)
-
-        if overlapping_set:
-            regs = [periods[i][2] for i in sorted(overlapping_set)]
-            ente = regs[0]['ente']
-            # rango aproximado de conflicto
-            starts = [self._to_date(r.get('fecha_ingreso')) or self._to_date(r.get('fecha_egreso')) for r in regs]
-            ends = [self._to_date(r.get('fecha_egreso')) or date.max for r in regs]
-            rango = f"{min([d for d in starts if d])}→{max(ends)}"
-            hallazgos.append({
-                'rfc': regs[0]['rfc_original'],
-                'registros': regs,
-                'total_entes': 1,
-                'entes': [ente],
-                'fecha_comun': rango,
-                'tipo_patron': 'SOLAPE_MISMO_ENTE',
-                'severidad': 5,
-                'descripcion': 'Solapamientos de periodos dentro del mismo ente (no se puede ingresar dos veces a la vez)'
-            })
-
-        return hallazgos
-
-    def _solapes_entre_entes(self, registros_por_ente):
-        """
-        Entre entes distintos para un RFC:
-        - SOLAPE_ENTRE_ENTES (sev 5)
-        Criterio: cualquier intersección entre [ingreso, egreso] de ente A y B.
-        Egreso ausente = activo => solapa con cualquier ingreso de otro ente.
-        """
-        hallazgos = []
-        entes = list(registros_por_ente.keys())
-        if len(entes) < 2:
-            return hallazgos
-
-        # construir periodos por ente
-        periods_by_ente = {}
-        for ente, regs in registros_por_ente.items():
-            ps = []
-            for r in regs:
+            # Cruces internos
+            periods = []
+            for r in lista:
                 fi, fe = self._to_date(r.get('fecha_ingreso')), self._to_date(r.get('fecha_egreso'))
                 if not fi and not fe:
                     continue
@@ -336,63 +191,70 @@ class DataProcessor:
                 end = fe or date.max
                 if not start:
                     start = end
-                ps.append((start, end, r))
-            periods_by_ente[ente] = ps
+                periods.append((start, end, r))
 
-        # detectar solapes entre pares de entes
-        overlapping_records = []
+            overlapping = set()
+            for i in range(len(periods)):
+                a_s, a_e, a_r = periods[i]
+                for j in range(i+1, len(periods)):
+                    b_s, b_e, b_r = periods[j]
+                    if (a_s <= b_e) and (b_s <= a_e):
+                        overlapping.update([i, j])
+
+            if overlapping:
+                regs = [periods[i][2] for i in sorted(overlapping)]
+                hallazgos.append({
+                    'rfc': regs[0]['rfc_original'],
+                    'nombre': regs[0].get('nombre',''),
+                    'registros': regs,
+                    'entes': [ente],
+                    'fecha_comun': f"{min([self._to_date(r.get('fecha_ingreso')) for r in regs if r.get('fecha_ingreso')])}→{max([self._to_date(r.get('fecha_egreso')) or date.max for r in regs])}",
+                    'tipo_patron': 'CRUCE_INTERNO',
+                    'descripcion': 'Cruce de periodos dentro del mismo ente.'
+                })
+        return hallazgos
+
+    def _cruces_entre_entes(self, registros, entes_del_rfc):
+        hallazgos = []
+        por_ente = defaultdict(list)
+        for r in registros:
+            por_ente[r['ente']].append(r)
+        entes = list(por_ente.keys())
+        if len(entes) < 2:
+            return []
+
+        overlapping = []
         overlapping_entes = set()
-        overlap_ranges = []
-
         for i in range(len(entes)):
             for j in range(i+1, len(entes)):
                 a, b = entes[i], entes[j]
-                for s1, e1, r1 in periods_by_ente.get(a, []):
-                    for s2, e2, r2 in periods_by_ente.get(b, []):
-                        if self._overlap(s1, e1, s2, e2):
-                            overlapping_records.extend([r1, r2])
-                            overlapping_entes.update([a, b])
-                            # calcular intersección aproximada
-                            inter_s = max(s1, s2)
-                            inter_e = min(e1, e2)
-                            overlap_ranges.append((inter_s, inter_e))
+                for r1 in por_ente[a]:
+                    for r2 in por_ente[b]:
+                        f1i, f1e = self._to_date(r1.get('fecha_ingreso')), self._to_date(r1.get('fecha_egreso'))
+                        f2i, f2e = self._to_date(r2.get('fecha_ingreso')), self._to_date(r2.get('fecha_egreso'))
+                        if not f1i and not f1e or not f2i and not f2e:
+                            continue
+                        s1, e1 = f1i or f1e, f1e or date.max
+                        s2, e2 = f2i or f2e, f2e or date.max
+                        if (s1 <= e2) and (s2 <= e1):
+                            overlapping.extend([r1, r2])
+                            overlapping_entes.update([a,b])
 
-        if overlapping_records:
-            # dedupe manteniendo orden
+        if overlapping:
             seen = set()
-            uniq_records = []
-            for r in overlapping_records:
-                ident = (r['ente'], r['hoja'], r['fecha_ingreso'], r['fecha_egreso'])
-                if ident not in seen:
-                    uniq_records.append(r); seen.add(ident)
-
-            if overlap_ranges:
-                start_min = min(r[0] for r in overlap_ranges)
-                end_max = max(r[1] for r in overlap_ranges)
-                rango = f"{start_min}→{end_max}"
-            else:
-                rango = "PERIODOS_SOLAPADOS"
-
+            uniq = []
+            for r in overlapping:
+                key = (r['ente'], r['fecha_ingreso'], r['fecha_egreso'])
+                if key not in seen:
+                    uniq.append(r); seen.add(key)
             hallazgos.append({
-                'rfc': uniq_records[0]['rfc_original'],
-                'registros': uniq_records,
-                'total_entes': len(overlapping_entes),
+                'rfc': uniq[0]['rfc_original'],
+                'nombre': uniq[0].get('nombre',''),
+                'registros': uniq,
                 'entes': sorted(list(overlapping_entes)),
-                'fecha_comun': rango,
-                'tipo_patron': 'SOLAPE_ENTRE_ENTES',
-                'severidad': 5,
-                'descripcion': 'Relaciones activas en entes distintos con periodos solapados (no puede trabajar simultáneamente en varios entes)'
+                'fecha_comun': 'CRUCE_ENTRE_ENTES',
+                'tipo_patron': 'CRUCE_ENTRE_ENTES',
+                'descripcion': 'Cruce de periodos laborales entre diferentes entes.'
             })
-
         return hallazgos
-
-    # ----------------------------------------------------
-    # UTILIDADES
-    # ----------------------------------------------------
-    def _overlap(self, a_s, a_e, b_s, b_e):
-        """
-        Solape inclusivo: [a_s, a_e] ∩ [b_s, b_e] != ∅
-        (Si egreso == ingreso del otro => cuenta como solape)
-        """
-        return (a_s <= b_e) and (b_s <= a_e)
 

@@ -1,14 +1,16 @@
 # ===========================================================
-# database.py  —  SCIL / Gestor de Base de Datos Auditor
-# Arquitectura con histórico, clasificación por tipo de análisis
-# y comparativo incremental.
+# database.py — SCIL / Gestor de Base de Datos Auditor
+# Incluye comparación con histórico, registro incremental y
+# control de duplicados por hash_firma.
 # ===========================================================
 
 import sqlite3
 import json
 import os
 from datetime import datetime
+import hashlib
 import threading
+
 
 class DatabaseManager:
     def __init__(self, db_path='scil.db'):
@@ -29,202 +31,174 @@ class DatabaseManager:
 
     def init_db(self):
         """Inicializa estructura de base de datos."""
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            print("🔄 Inicializando base de datos...")
+        conn = self.get_connection()
+        cur = conn.cursor()
+        cur.executescript("""
+            CREATE TABLE IF NOT EXISTS resultados (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tipo_analisis TEXT NOT NULL,
+                rfc TEXT NOT NULL,
+                datos TEXT NOT NULL,
+                hash_firma TEXT UNIQUE,
+                fecha_analisis TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
 
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS resultados (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    tipo_analisis TEXT NOT NULL,          -- 'patrones' o 'horarios'
-                    rfc TEXT NOT NULL,
-                    datos TEXT NOT NULL,
-                    hash_firma TEXT,                      -- hash único del hallazgo (para evitar duplicados)
-                    fecha_analisis TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
+            CREATE TABLE IF NOT EXISTS archivos_procesados (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre_archivo TEXT NOT NULL,
+                tipo_analisis TEXT,
+                total_registros INTEGER,
+                fecha_procesamiento TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
 
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS archivos_procesados (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    nombre_archivo TEXT NOT NULL,
-                    tipo_analisis TEXT,
-                    total_registros INTEGER,
-                    fecha_procesamiento TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
-            # Índices para rendimiento
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_tipo ON resultados(tipo_analisis)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_rfc_tipo ON resultados(rfc, tipo_analisis)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_hash ON resultados(hash_firma)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_fecha ON resultados(fecha_analisis)')
-
-            conn.commit()
-            self._initialized = True
-            print("✅ Base de datos lista")
-        except Exception as e:
-            print(f"❌ Error inicializando base de datos: {e}")
-            raise
+            CREATE INDEX IF NOT EXISTS idx_tipo ON resultados(tipo_analisis);
+            CREATE INDEX IF NOT EXISTS idx_rfc_tipo ON resultados(rfc, tipo_analisis);
+            CREATE INDEX IF NOT EXISTS idx_hash ON resultados(hash_firma);
+            CREATE INDEX IF NOT EXISTS idx_fecha ON resultados(fecha_analisis);
+        """)
+        conn.commit()
+        self._initialized = True
+        print("✅ Base de datos inicializada.")
 
     def ensure_initialized(self):
         if not self._initialized:
             self.init_db()
 
     # -------------------------------------------------------
-    # Guardado de resultados (con histórico y comparación)
+    # Guardado y comparación con histórico
     # -------------------------------------------------------
-    def guardar_resultados(self, resultados, tipo_analisis='patrones', nombre_archivo=None):
+    def comparar_con_historico(self, nuevos_resultados, tipo_analisis='laboral'):
         """
-        Guarda nuevos resultados sin eliminar anteriores.
-        Evita duplicados mediante hash_firma único por RFC + tipo + descripción.
+        Compara nuevos resultados con el histórico.
+        Retorna: (nuevos, repetidos, desaparecidos)
         """
-        if not resultados:
-            print("⚠️ No hay resultados para guardar.")
-            return
-
-        import hashlib
-
         self.ensure_initialized()
         conn = self.get_connection()
-        cursor = conn.cursor()
+        cur = conn.cursor()
 
-        nuevos = 0
-        duplicados = 0
-
-        cursor.execute('BEGIN TRANSACTION')
-        try:
-            for res in resultados:
-                # Se genera una firma única de cada hallazgo
-                firma = hashlib.sha256(
-                    f"{res.get('rfc','')}_{res.get('tipo_patron','')}_{res.get('descripcion','')}_{tipo_analisis}".encode('utf-8')
-                ).hexdigest()
-
-                # Verificar si ya existe
-                cursor.execute("SELECT 1 FROM resultados WHERE hash_firma = ?", (firma,))
-                if cursor.fetchone():
-                    duplicados += 1
-                    continue
-
-                cursor.execute("""
-                    INSERT INTO resultados (tipo_analisis, rfc, datos, hash_firma)
-                    VALUES (?, ?, ?, ?)
-                """, (
-                    tipo_analisis,
-                    res.get('rfc', ''),
-                    json.dumps(res, ensure_ascii=False, default=str),
-                    firma
-                ))
-                nuevos += 1
-
-            # Registro de archivo procesado
-            if nombre_archivo:
-                cursor.execute("""
-                    INSERT INTO archivos_procesados (nombre_archivo, tipo_analisis, total_registros)
-                    VALUES (?, ?, ?)
-                """, (nombre_archivo, tipo_analisis, len(resultados)))
-
-            conn.commit()
-            print(f"💾 Guardados {nuevos} nuevos resultados ({duplicados} duplicados omitidos).")
-
-        except Exception as e:
-            conn.rollback()
-            print(f"❌ Error guardando resultados: {e}")
-            raise
-
-    # -------------------------------------------------------
-    # Recuperación y comparación
-    # -------------------------------------------------------
-    def obtener_resultados(self, tipo_analisis=None, limite=None):
-        """Recupera resultados (por tipo o todos)."""
-        self.ensure_initialized()
-        conn = self.get_connection()
-        cursor = conn.cursor()
-
-        query = "SELECT datos FROM resultados"
-        params = []
-        if tipo_analisis:
-            query += " WHERE tipo_analisis = ?"
-            params.append(tipo_analisis)
-        query += " ORDER BY fecha_analisis DESC"
-        if limite:
-            query += f" LIMIT {int(limite)}"
-
-        cursor.execute(query, tuple(params))
-        filas = cursor.fetchall()
-        resultados = []
-        for f in filas:
-            try:
-                resultados.append(json.loads(f['datos']))
-            except json.JSONDecodeError:
-                continue
-
-        print(f"📊 Recuperados {len(resultados)} resultados ({tipo_analisis or 'todos'})")
-        return resultados
-
-    def comparar_con_historico(self, nuevos_resultados, tipo_analisis='patrones'):
-        """
-        Compara un conjunto nuevo de resultados con el histórico.
-        Devuelve listas separadas: nuevos, repetidos, y desaparecidos.
-        """
-        import hashlib
-        self.ensure_initialized()
-        conn = self.get_connection()
-        cursor = conn.cursor()
-
-        # Hash actuales en BD
-        cursor.execute("SELECT hash_firma FROM resultados WHERE tipo_analisis = ?", (tipo_analisis,))
-        antiguos = {r['hash_firma'] for r in cursor.fetchall()}
+        cur.execute("SELECT hash_firma FROM resultados WHERE tipo_analisis = ?", (tipo_analisis,))
+        antiguos = {r['hash_firma'] for r in cur.fetchall()}
 
         nuevos_hash = set()
         nuevos_unicos = []
         repetidos = []
 
-        for r in nuevos_resultados:
-            h = hashlib.sha256(
-                f"{r.get('rfc','')}_{r.get('tipo_patron','')}_{r.get('descripcion','')}_{tipo_analisis}".encode('utf-8')
+        for res in nuevos_resultados:
+            firma = hashlib.sha256(
+                f"{res.get('rfc','')}_{res.get('tipo_patron','')}_{res.get('descripcion','')}_{tipo_analisis}".encode('utf-8')
             ).hexdigest()
-            if h in antiguos:
-                repetidos.append(r)
+            res['hash_firma'] = firma
+            if firma in antiguos:
+                repetidos.append(res)
             else:
-                nuevos_unicos.append(r)
-            nuevos_hash.add(h)
+                nuevos_unicos.append(res)
+            nuevos_hash.add(firma)
 
         desaparecidos_hash = antiguos - nuevos_hash
         desaparecidos = []
         if desaparecidos_hash:
-            cursor.execute(
-                f"SELECT datos FROM resultados WHERE hash_firma IN ({','.join(['?']*len(desaparecidos_hash))})",
+            cur.execute(
+                f"SELECT datos FROM resultados WHERE hash_firma IN ({','.join(['?'] * len(desaparecidos_hash))})",
                 tuple(desaparecidos_hash)
             )
-            for row in cursor.fetchall():
+            for row in cur.fetchall():
                 try:
                     desaparecidos.append(json.loads(row['datos']))
                 except:
                     continue
 
-        print(f"🔍 Comparación completada → Nuevos: {len(nuevos_unicos)}, Repetidos: {len(repetidos)}, Desaparecidos: {len(desaparecidos)}")
+        print(f"🔍 Comparación: {len(nuevos_unicos)} nuevos, {len(repetidos)} repetidos, {len(desaparecidos)} desaparecidos.")
         return nuevos_unicos, repetidos, desaparecidos
 
-    # -------------------------------------------------------
-    # Utilidades
-    # -------------------------------------------------------
-    def obtener_archivos_procesados(self, tipo_analisis=None):
-        """Devuelve histórico de archivos analizados."""
+    def guardar_resultados(self, resultados, tipo_analisis='laboral', nombre_archivo=None):
+        """Guarda resultados nuevos evitando duplicados por hash_firma."""
+        if not resultados:
+            return 0
         self.ensure_initialized()
         conn = self.get_connection()
-        cursor = conn.cursor()
-        query = "SELECT * FROM archivos_procesados"
-        params = []
-        if tipo_analisis:
-            query += " WHERE tipo_analisis = ?"
-            params.append(tipo_analisis)
-        query += " ORDER BY fecha_procesamiento DESC"
-        cursor.execute(query, tuple(params))
-        return [dict(r) for r in cursor.fetchall()]
+        cur = conn.cursor()
+        nuevos = 0
+        cur.execute('BEGIN TRANSACTION')
 
-    def __del__(self):
-        if hasattr(self._local, 'conn'):
-            self._local.conn.close()
+        try:
+            for res in resultados:
+                firma = res.get('hash_firma')
+                if not firma:
+                    firma = hashlib.sha256(
+                        f"{res.get('rfc','')}_{res.get('tipo_patron','')}_{res.get('descripcion','')}_{tipo_analisis}".encode('utf-8')
+                    ).hexdigest()
+
+                cur.execute("SELECT 1 FROM resultados WHERE hash_firma=?", (firma,))
+                if cur.fetchone():
+                    continue
+
+                cur.execute("""
+                    INSERT INTO resultados (tipo_analisis, rfc, datos, hash_firma)
+                    VALUES (?, ?, ?, ?)
+                """, (tipo_analisis, res.get('rfc',''), json.dumps(res, ensure_ascii=False), firma))
+                nuevos += 1
+
+            if nombre_archivo:
+                cur.execute("""
+                    INSERT INTO archivos_procesados (nombre_archivo, tipo_analisis, total_registros)
+                    VALUES (?, ?, ?)
+                """, (nombre_archivo, tipo_analisis, len(resultados)))
+
+            conn.commit()
+            print(f"💾 {nuevos} resultados guardados en histórico.")
+        except Exception as e:
+            conn.rollback()
+            print(f"❌ Error guardando resultados: {e}")
+            raise
+        return nuevos
+
+    # -------------------------------------------------------
+    # Recuperación con paginación
+    # -------------------------------------------------------
+    def obtener_resultados_paginados(self, tipo_analisis=None, busqueda=None, pagina=1, limite=50):
+        """Recupera resultados con filtros y paginación."""
+        self.ensure_initialized()
+        conn = self.get_connection()
+        cur = conn.cursor()
+
+        base = "FROM resultados WHERE 1=1"
+        params = []
+
+        if tipo_analisis:
+            base += " AND tipo_analisis = ?"
+            params.append(tipo_analisis)
+
+        if busqueda:
+            base += " AND datos LIKE ?"
+            params.append(f"%{busqueda}%")
+
+        # total de registros
+        cur.execute(f"SELECT COUNT(1) {base}", tuple(params))
+        total = cur.fetchone()[0]
+
+        offset = (pagina - 1) * limite
+        cur.execute(f"SELECT datos {base} ORDER BY fecha_analisis DESC LIMIT ? OFFSET ?", tuple(params + [limite, offset]))
+        filas = cur.fetchall()
+
+        resultados = []
+        for f in filas:
+            try:
+                resultados.append(json.loads(f['datos']))
+            except:
+                continue
+
+        return resultados, total
+
+    # -------------------------------------------------------
+    def obtener_archivos_procesados(self, tipo_analisis=None):
+        conn = self.get_connection()
+        cur = conn.cursor()
+        q = "SELECT * FROM archivos_procesados"
+        p = []
+        if tipo_analisis:
+            q += " WHERE tipo_analisis=?"
+            p.append(tipo_analisis)
+        q += " ORDER BY fecha_procesamiento DESC"
+        cur.execute(q, tuple(p))
+        return [dict(r) for r in cur.fetchall()]
 

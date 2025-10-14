@@ -18,8 +18,8 @@
       </div>
       <div class="nav-links">
         <a href="{{ url_for('dashboard') }}" class="nav-link active">Inicio</a>
-        <a href="{{ url_for('mostrar_resultados') }}" class="nav-link">Laborales</a>
-        <a href="{{ url_for('mostrar_resultados_horarios') }}" class="nav-link">Horarios</a>
+        <a href="{{ url_for('resultados_patrones') }}" class="nav-link">Laborales</a>
+        <a href="{{ url_for('resultados_horarios') }}" class="nav-link">Horarios</a>
         <a href="{{ url_for('logout') }}" class="nav-link">Salir</a>
       </div>
     </div>
@@ -80,14 +80,13 @@
 
   <script>
     // Reutilizable para ambos formularios
-    function uploadHandler(formId, uploadUrl, resultDivId) {
+    function uploadHandler(formId, uploadUrl, resultDivId, redirectUrl) {
       const form = document.getElementById(formId);
       const input = form.querySelector("input[type=file]");
       const progress = form.parentElement.querySelector(".upload-progress");
       const content = form.parentElement.querySelector(".upload-content");
       const resultDiv = document.getElementById(resultDivId);
 
-      // ✅ Evita doble apertura de ventana
       form.parentElement.addEventListener("click", (e) => {
         if (e.target.tagName.toLowerCase() === "input") return;
         input.click();
@@ -122,9 +121,7 @@
                     <span class="stat">${data.total_resultados || 0} resultados</span>
                     <span class="stat">${data.nuevos || 0} nuevos</span>
                   </div>
-                  <a href="${uploadUrl.includes('horarios') ? '/resultados_horarios' : '/resultados'}" class="btn btn-primary">
-                    Ver resultados
-                  </a>
+                  <a href="${redirectUrl}" class="btn btn-primary">Ver resultados</a>
                 </div>`;
             }
           })
@@ -137,8 +134,8 @@
     }
 
     document.addEventListener("DOMContentLoaded", () => {
-      uploadHandler("formLaboral", "/upload", "resultLaboral");
-      uploadHandler("formHorarios", "/upload_horarios", "resultHorarios");
+      uploadHandler("formLaboral", "/upload", "resultLaboral", "/resultados");
+      uploadHandler("formHorarios", "/upload_horarios", "resultHorarios", "/resultados_horarios");
     });
   </script>
 </body>
