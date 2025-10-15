@@ -1,6 +1,6 @@
 # ===========================================================
 # app.py — SCIL QNA 2025 / Sistema de Cruce de Información Laboral
-# Versión final — Soporte multiarchivo, exportación Excel, fusión de archivos
+# Versión final — Agrupación limpia, deduplicación total, exportación auditada
 # ===========================================================
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_file
@@ -74,10 +74,10 @@ def upload_laboral():
             print(f"📁 Guardado archivo laboral: {fname}")
 
         processor = DataProcessor()
+        resultados_totales = []
         if hasattr(processor, "procesar_archivos"):
             resultados_totales = processor.procesar_archivos(filepaths)
         else:
-            resultados_totales = []
             for p in filepaths:
                 resultados_totales.extend(processor.procesar_archivo(p))
 
@@ -136,20 +136,69 @@ def upload_horarios():
 
 
 # ===========================================================
-# RESULTADOS (Laborales y Horarios)
+# RESULTADOS LABORALES (agrupados y deduplicados)
 # ===========================================================
 @app.route("/resultados")
 def resultados_patrones():
     if not session.get("autenticado"):
         return redirect(url_for("login"))
+
     pagina = int(request.args.get("page", 1))
     busqueda = request.args.get("search", "").strip() or None
     limite = 20
+
     resultados, total = db_manager.obtener_resultados_paginados("laboral", busqueda, pagina, limite)
     total_paginas = max(1, ceil(total / limite))
-    return render_template("resultados.html", resultados=resultados, busqueda=busqueda or "", pagina_actual=pagina, total_paginas=total_paginas, total=total)
+
+    agrupados = {}
+
+    for r in resultados:
+        rfc = r.get("rfc")
+        if not rfc:
+            continue
+        if rfc not in agrupados:
+            agrupados[rfc] = {
+                "nombre": r.get("nombre", ""),
+                "quincenas": set(),
+                "entes": set(),
+                "registros": set()
+            }
+
+        agrupados[rfc]["quincenas"].add((r.get("fecha_comun", "") or "").strip())
+        for e in r.get("entes", []):
+            agrupados[rfc]["entes"].add((e or "").strip().upper())
+
+        for reg in r.get("registros", []):
+            clave = (
+                (reg.get("ente", "") or "").strip().upper(),
+                (reg.get("puesto", "") or "").strip().upper(),
+                (reg.get("fecha_ingreso", "") or "").strip(),
+                (reg.get("fecha_egreso", "") or "").strip()
+            )
+            agrupados[rfc]["registros"].add(clave)
+
+    # Convertir sets a listas limpias y ordenadas
+    for rfc, data in agrupados.items():
+        data["quincenas"] = sorted(list({q for q in data["quincenas"] if q}))
+        data["entes"] = sorted(list({e for e in data["entes"] if e}))
+        data["registros"] = [
+            {"ente": e, "puesto": p, "fecha_ingreso": fi, "fecha_egreso": fe}
+            for (e, p, fi, fe) in sorted(data["registros"])
+        ]
+
+    return render_template(
+        "resultados.html",
+        resultados_agrupados=agrupados,
+        busqueda=busqueda or "",
+        pagina_actual=pagina,
+        total_paginas=total_paginas,
+        total=total
+    )
 
 
+# ===========================================================
+# RESULTADOS HORARIOS
+# ===========================================================
 @app.route("/resultados_horarios")
 def resultados_horarios():
     if not session.get("autenticado"):
@@ -193,19 +242,27 @@ def exportar_excel(tipo):
     ]
     ws.append(headers)
 
+    vistos = set()
     for r in resultados:
-        rfc = r.get("rfc", "")
-        nombre = r.get("nombre", "")
-        tipo_patron = r.get("tipo_patron", "")
-        descripcion = r.get("descripcion", "")
-        entes_str = " | ".join(r.get("entes", []))
-        quincena = r.get("fecha_comun", "")
+        rfc = r.get("rfc", "").strip().upper()
+        nombre = (r.get("nombre", "") or "").strip()
+        tipo_patron = (r.get("tipo_patron", "") or "").strip()
+        descripcion = (r.get("descripcion", "") or "").strip()
+        entes_str = " | ".join(sorted(set(e.strip().upper() for e in r.get("entes", []) if e)))
+        quincena = (r.get("fecha_comun", "") or "").strip()
+
         for reg in (r.get("registros", []) or [{}]):
-            ws.append([
+            clave = (
                 rfc, nombre, tipo_patron, descripcion, entes_str, quincena,
-                reg.get("ente", ""), reg.get("puesto", ""),
-                reg.get("fecha_ingreso", ""), reg.get("fecha_egreso", "")
-            ])
+                (reg.get("ente", "") or "").strip().upper(),
+                (reg.get("puesto", "") or "").strip().upper(),
+                (reg.get("fecha_ingreso", "") or "").strip(),
+                (reg.get("fecha_egreso", "") or "").strip()
+            )
+            if clave in vistos:
+                continue
+            vistos.add(clave)
+            ws.append(list(clave))
 
     for col in ws.columns:
         width = min(max(len(str(c.value)) if c.value else 0 for c in col) + 2, 50)

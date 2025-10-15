@@ -64,32 +64,9 @@
       background: var(--color-bg);
       font-weight: 600;
     }
-    .detalle-header {
-      font-weight: 600;
-      color: var(--color-primary);
-      margin-top: 1rem;
-    }
     .sin-egreso {
       color: var(--color-error);
       font-weight: 600;
-    }
-    .pagination {
-      display:flex;
-      justify-content:center;
-      gap:.5rem;
-      margin-top:2rem;
-    }
-    .pagination a {
-      padding:.5rem 1rem;
-      border:1px solid var(--color-border);
-      border-radius:6px;
-      color:var(--color-primary);
-      text-decoration:none;
-      font-weight:500;
-    }
-    .pagination a.active {
-      background:var(--color-primary);
-      color:#fff;
     }
   </style>
 </head>
@@ -126,83 +103,58 @@
         </div>
       </div>
 
-      {% if resultados %}
-        {% set grupos = {} %}
-        {% for r in resultados %}
-          {% if r.rfc not in grupos %}
-            {% set _ = grupos.update({r.rfc: []}) %}
-          {% endif %}
-          {% set _ = grupos[r.rfc].append(r) %}
-        {% endfor %}
+      {% if resultados_agrupados %}
+        {% for rfc, info in resultados_agrupados.items() %}
+        <div class="rfc-group">
+          <div class="rfc-header">
+            <h3>{{ rfc }}</h3>
+            <small>{{ info.nombre }}</small>
+          </div>
 
-        {% for rfc, items in grupos.items() %}
-          <div class="rfc-group">
-            <div class="rfc-header">
-              <h3>{{ rfc }}</h3>
-              <small>{{ items[0].nombre }}</small>
-            </div>
-
-            <div class="qna-badges">
-              {% for i in items %}
-                <span class="qna-badge">Quincena: {{ i.fecha_comun }}</span>
-              {% endfor %}
-            </div>
-
-            {% for i in items %}
-              <p style="margin-top:0.5rem;color:var(--color-muted);">{{ i.descripcion }}</p>
-              <div class="detalle-header">Cruce detectado entre:</div>
-              <div>
-                {% for e in i.entes %}
-                  <span class="ente-tag">{{ e }}</span>
-                {% endfor %}
-              </div>
-
-              {% if i.registros %}
-              <table class="detalle-tabla">
-                <thead>
-                  <tr>
-                    <th>Ente</th>
-                    <th>Puesto</th>
-                    <th>Fecha Ingreso</th>
-                    <th>Fecha Egreso</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for reg in i.registros %}
-                  <tr>
-                    <td>{{ reg.ente }}</td>
-                    <td>{{ reg.puesto }}</td>
-                    <td>{{ reg.fecha_ingreso or '—' }}</td>
-                    <td class="{% if not reg.fecha_egreso %}sin-egreso{% endif %}">
-                      {{ reg.fecha_egreso or 'Sin Egreso' }}
-                    </td>
-                  </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-              {% endif %}
+          <div class="qna-badges">
+            {% for q in info.quincenas %}
+              <span class="qna-badge">Quincena: {{ q }}</span>
             {% endfor %}
           </div>
+
+          <div style="margin-top:0.5rem;">
+            <strong style="color:var(--color-primary);">Cruce detectado entre:</strong><br>
+            {% for e in info.entes %}
+              <span class="ente-tag">{{ e }}</span>
+            {% endfor %}
+          </div>
+
+          {% if info.registros %}
+          <table class="detalle-tabla">
+            <thead>
+              <tr>
+                <th>Ente</th>
+                <th>Puesto</th>
+                <th>Fecha Ingreso</th>
+                <th>Fecha Egreso</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for reg in info.registros %}
+              <tr>
+                <td>{{ reg.ente }}</td>
+                <td>{{ reg.puesto }}</td>
+                <td>{{ reg.fecha_ingreso or '—' }}</td>
+                <td class="{% if not reg.fecha_egreso %}sin-egreso{% endif %}">
+                  {{ reg.fecha_egreso or 'Sin Egreso' }}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% endif %}
+        </div>
         {% endfor %}
       {% else %}
         <div class="empty-state-minimal">
           <div class="empty-icon">📭</div>
           <h3>No se encontraron resultados</h3>
         </div>
-      {% endif %}
-
-      {% if total_paginas > 1 %}
-      <div class="pagination">
-        {% if pagina_actual > 1 %}
-          <a href="?page={{ pagina_actual - 1 }}">← Anterior</a>
-        {% endif %}
-        {% for i in range(1, total_paginas + 1) %}
-          <a href="?page={{ i }}" class="{% if i == pagina_actual %}active{% endif %}">{{ i }}</a>
-        {% endfor %}
-        {% if pagina_actual < total_paginas %}
-          <a href="?page={{ pagina_actual + 1 }}">Siguiente →</a>
-        {% endif %}
-      </div>
       {% endif %}
     </div>
   </main>
