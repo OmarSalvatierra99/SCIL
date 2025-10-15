@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SCIL - Dashboard | OFS Tlaxcala</title>
+  <title>SCIL QNA 2025 - Dashboard | OFS Tlaxcala</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -12,7 +12,7 @@
       <div class="nav-brand">
         <img src="{{ url_for('static', filename='ofs_logo.png') }}" alt="OFS" style="height:40px;border-radius:6px;">
         <div>
-          <h1>SCIL</h1>
+          <h1>SCIL QNA 2025</h1>
           <span>Órgano de Fiscalización Superior del Estado de Tlaxcala</span>
         </div>
       </div>
@@ -28,25 +28,25 @@
   <main class="main-content">
     <div class="container">
       <div class="page-header">
-        <h2>Panel de Auditoría</h2>
-        <p>Analice información laboral y cruces de horarios docentes</p>
+        <h2>Panel de Auditoría QNA</h2>
+        <p>Analiza relaciones laborales por quincena y cruces de horarios docentes</p>
       </div>
 
       <!-- Sección de análisis laboral -->
       <section class="upload-section">
-        <h3 style="text-align:center;margin-bottom:1rem;">🔍 Análisis de Patrones Laborales</h3>
+        <h3 style="text-align:center;margin-bottom:1rem;">🔍 Análisis de Patrones Laborales (por quincenas)</h3>
         <div class="upload-card">
           <div class="upload-area" id="uploadLaboral">
             <form id="formLaboral" enctype="multipart/form-data">
-              <input type="file" id="fileLaboral" name="file" accept=".xlsx" class="file-input" required>
+              <input type="file" id="fileLaboral" name="files" accept=".xlsx" class="file-input" multiple required>
               <div class="upload-content">
                 <div class="upload-icon">📁</div>
-                <h3>Subir archivo Excel</h3>
-                <p>Analiza duplicidades laborales (ingreso / egreso)</p>
+                <h3>Subir archivos Excel</h3>
+                <p>Puedes seleccionar uno o varios archivos con estructura QNA1–QNA12</p>
               </div>
               <div class="upload-progress" style="display:none;">
                 <div class="progress-spinner"></div>
-                <p>Procesando archivo...</p>
+                <p>Procesando archivos...</p>
               </div>
             </form>
           </div>
@@ -60,15 +60,15 @@
         <div class="upload-card">
           <div class="upload-area" id="uploadHorarios">
             <form id="formHorarios" enctype="multipart/form-data">
-              <input type="file" id="fileHorarios" name="file" accept=".xlsx" class="file-input" required>
+              <input type="file" id="fileHorarios" name="files" accept=".xlsx" class="file-input" multiple required>
               <div class="upload-content">
                 <div class="upload-icon">🕓</div>
-                <h3>Subir archivo Excel</h3>
-                <p>Detecta maestros con cruces de horario en diferentes planteles</p>
+                <h3>Subir archivos Excel</h3>
+                <p>Selecciona uno o varios archivos de horarios docentes</p>
               </div>
               <div class="upload-progress" style="display:none;">
                 <div class="progress-spinner"></div>
-                <p>Procesando archivo...</p>
+                <p>Procesando archivos...</p>
               </div>
             </form>
           </div>
@@ -79,7 +79,6 @@
   </main>
 
   <script>
-    // Reutilizable para ambos formularios
     function uploadHandler(formId, uploadUrl, resultDivId, redirectUrl) {
       const form = document.getElementById(formId);
       const input = form.querySelector("input[type=file]");
@@ -93,9 +92,9 @@
       });
 
       input.addEventListener("change", () => {
-        const file = input.files[0];
-        if (!file || !file.name.endsWith(".xlsx")) {
-          alert("Solo se permiten archivos Excel (.xlsx)");
+        const files = input.files;
+        if (!files.length) {
+          alert("Debes seleccionar al menos un archivo Excel (.xlsx)");
           return;
         }
 
@@ -103,7 +102,7 @@
         content.style.display = "none";
 
         const formData = new FormData();
-        formData.append("file", file);
+        for (let file of files) formData.append("files", file);
 
         fetch(uploadUrl, { method: "POST", body: formData })
           .then(res => res.json())

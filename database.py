@@ -1,7 +1,6 @@
 # ===========================================================
 # database.py — SCIL / Gestor de Base de Datos Auditor
-# Incluye comparación con histórico, registro incremental y
-# control de duplicados por hash_firma.
+# Versión QNA 2025 — soporte a cruces por quincenas
 # ===========================================================
 
 import sqlite3
@@ -10,7 +9,6 @@ import os
 from datetime import datetime
 import hashlib
 import threading
-
 
 class DatabaseManager:
     def __init__(self, db_path='scil.db'):
@@ -23,14 +21,12 @@ class DatabaseManager:
     # Conexión y configuración
     # -------------------------------------------------------
     def get_connection(self):
-        """Obtiene conexión SQLite segura por hilo."""
         if not hasattr(self._local, 'conn'):
             self._local.conn = sqlite3.connect(self.db_path, check_same_thread=False)
             self._local.conn.row_factory = sqlite3.Row
         return self._local.conn
 
     def init_db(self):
-        """Inicializa estructura de base de datos."""
         conn = self.get_connection()
         cur = conn.cursor()
         cur.executescript("""
@@ -58,31 +54,19 @@ class DatabaseManager:
         """)
         conn.commit()
         self._initialized = True
-        print("✅ Base de datos inicializada.")
-
-    def ensure_initialized(self):
-        if not self._initialized:
-            self.init_db()
+        print("✅ Base de datos inicializada (modo QNA).")
 
     # -------------------------------------------------------
-    # Guardado y comparación con histórico
+    # Comparación y guardado
     # -------------------------------------------------------
     def comparar_con_historico(self, nuevos_resultados, tipo_analisis='laboral'):
-        """
-        Compara nuevos resultados con el histórico.
-        Retorna: (nuevos, repetidos, desaparecidos)
-        """
-        self.ensure_initialized()
+        self.init_db()
         conn = self.get_connection()
         cur = conn.cursor()
-
-        cur.execute("SELECT hash_firma FROM resultados WHERE tipo_analisis = ?", (tipo_analisis,))
+        cur.execute("SELECT hash_firma FROM resultados WHERE tipo_analisis=?", (tipo_analisis,))
         antiguos = {r['hash_firma'] for r in cur.fetchall()}
 
-        nuevos_hash = set()
-        nuevos_unicos = []
-        repetidos = []
-
+        nuevos_unicos, repetidos, nuevos_hash = [], [], set()
         for res in nuevos_resultados:
             firma = hashlib.sha256(
                 f"{res.get('rfc','')}_{res.get('tipo_patron','')}_{res.get('descripcion','')}_{tipo_analisis}".encode('utf-8')
@@ -97,24 +81,20 @@ class DatabaseManager:
         desaparecidos_hash = antiguos - nuevos_hash
         desaparecidos = []
         if desaparecidos_hash:
-            cur.execute(
-                f"SELECT datos FROM resultados WHERE hash_firma IN ({','.join(['?'] * len(desaparecidos_hash))})",
-                tuple(desaparecidos_hash)
-            )
+            qmarks = ','.join(['?'] * len(desaparecidos_hash))
+            cur.execute(f"SELECT datos FROM resultados WHERE hash_firma IN ({qmarks})", tuple(desaparecidos_hash))
             for row in cur.fetchall():
                 try:
                     desaparecidos.append(json.loads(row['datos']))
                 except:
                     continue
 
-        print(f"🔍 Comparación: {len(nuevos_unicos)} nuevos, {len(repetidos)} repetidos, {len(desaparecidos)} desaparecidos.")
+        print(f"🔍 Comparación QNA: {len(nuevos_unicos)} nuevos, {len(repetidos)} repetidos, {len(desaparecidos)} desaparecidos.")
         return nuevos_unicos, repetidos, desaparecidos
 
     def guardar_resultados(self, resultados, tipo_analisis='laboral', nombre_archivo=None):
-        """Guarda resultados nuevos evitando duplicados por hash_firma."""
         if not resultados:
             return 0
-        self.ensure_initialized()
         conn = self.get_connection()
         cur = conn.cursor()
         nuevos = 0
@@ -122,16 +102,12 @@ class DatabaseManager:
 
         try:
             for res in resultados:
-                firma = res.get('hash_firma')
-                if not firma:
-                    firma = hashlib.sha256(
-                        f"{res.get('rfc','')}_{res.get('tipo_patron','')}_{res.get('descripcion','')}_{tipo_analisis}".encode('utf-8')
-                    ).hexdigest()
-
+                firma = res.get('hash_firma') or hashlib.sha256(
+                    f"{res.get('rfc','')}_{res.get('tipo_patron','')}_{res.get('descripcion','')}_{tipo_analisis}".encode('utf-8')
+                ).hexdigest()
                 cur.execute("SELECT 1 FROM resultados WHERE hash_firma=?", (firma,))
                 if cur.fetchone():
                     continue
-
                 cur.execute("""
                     INSERT INTO resultados (tipo_analisis, rfc, datos, hash_firma)
                     VALUES (?, ?, ?, ?)
@@ -145,19 +121,15 @@ class DatabaseManager:
                 """, (nombre_archivo, tipo_analisis, len(resultados)))
 
             conn.commit()
-            print(f"💾 {nuevos} resultados guardados en histórico.")
+            print(f"💾 {nuevos} resultados guardados (modo QNA).")
         except Exception as e:
             conn.rollback()
-            print(f"❌ Error guardando resultados: {e}")
+            print(f"❌ Error guardando resultados QNA: {e}")
             raise
         return nuevos
 
-    # -------------------------------------------------------
-    # Recuperación con paginación
-    # -------------------------------------------------------
     def obtener_resultados_paginados(self, tipo_analisis=None, busqueda=None, pagina=1, limite=50):
-        """Recupera resultados con filtros y paginación."""
-        self.ensure_initialized()
+        self.init_db()
         conn = self.get_connection()
         cur = conn.cursor()
 
@@ -165,17 +137,14 @@ class DatabaseManager:
         params = []
 
         if tipo_analisis:
-            base += " AND tipo_analisis = ?"
+            base += " AND tipo_analisis=?"
             params.append(tipo_analisis)
-
         if busqueda:
             base += " AND datos LIKE ?"
             params.append(f"%{busqueda}%")
 
-        # total de registros
         cur.execute(f"SELECT COUNT(1) {base}", tuple(params))
         total = cur.fetchone()[0]
-
         offset = (pagina - 1) * limite
         cur.execute(f"SELECT datos {base} ORDER BY fecha_analisis DESC LIMIT ? OFFSET ?", tuple(params + [limite, offset]))
         filas = cur.fetchall()
@@ -186,19 +155,5 @@ class DatabaseManager:
                 resultados.append(json.loads(f['datos']))
             except:
                 continue
-
         return resultados, total
-
-    # -------------------------------------------------------
-    def obtener_archivos_procesados(self, tipo_analisis=None):
-        conn = self.get_connection()
-        cur = conn.cursor()
-        q = "SELECT * FROM archivos_procesados"
-        p = []
-        if tipo_analisis:
-            q += " WHERE tipo_analisis=?"
-            p.append(tipo_analisis)
-        q += " ORDER BY fecha_procesamiento DESC"
-        cur.execute(q, tuple(p))
-        return [dict(r) for r in cur.fetchall()]
 
