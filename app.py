@@ -1,6 +1,6 @@
 # ===========================================================
 # app.py — SCIL QNA 2025 / Sistema de Cruce de Información Laboral
-# Versión final — Multiusuario con control de entes, acceso total
+# Versión final — Multiusuario con control de entes y filtro flexible
 # ===========================================================
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_file
@@ -14,6 +14,9 @@ from openpyxl import Workbook
 from io import BytesIO
 from datetime import datetime
 
+# -----------------------------------------------------------
+# CONFIGURACIÓN BASE
+# -----------------------------------------------------------
 app = Flask(__name__)
 app.secret_key = "scil_tlax_2025"
 UPLOAD_FOLDER = "uploads"
@@ -29,7 +32,6 @@ def login():
     if request.method == "POST":
         usuario = request.form.get("usuario")
         clave = request.form.get("clave")
-
         datos = db_manager.get_usuario(usuario, clave)
         if datos:
             session["autenticado"] = True
@@ -47,7 +49,6 @@ def logout():
     session.clear()
     return redirect(url_for("login"))
 
-
 # ===========================================================
 # DASHBOARD
 # ===========================================================
@@ -56,7 +57,6 @@ def dashboard():
     if not session.get("autenticado"):
         return redirect(url_for("login"))
     return render_template("dashboard.html", nombre=session.get("nombre", ""))
-
 
 # ===========================================================
 # PROCESAMIENTO LABORAL (multiarchivo)
@@ -101,7 +101,6 @@ def upload_laboral():
         print(f"❌ Error en /upload: {e}")
         return jsonify({"error": str(e)}), 500
 
-
 # ===========================================================
 # PROCESAMIENTO HORARIOS (multiarchivo)
 # ===========================================================
@@ -139,9 +138,8 @@ def upload_horarios():
         print(f"❌ Error en /upload_horarios: {e}")
         return jsonify({"error": str(e)}), 500
 
-
 # ===========================================================
-# RESULTADOS LABORALES (con filtro de entes)
+# RESULTADOS LABORALES (Filtro flexible por subcadena)
 # ===========================================================
 @app.route("/resultados")
 def resultados_patrones():
@@ -156,23 +154,18 @@ def resultados_patrones():
     total_paginas = max(1, ceil(total / limite))
 
     entes_usuario = [e.strip().upper() for e in session.get("entes", []) if e.strip()]
-    acceso_total = False
-
-    # Si el usuario tiene todos los entes (Odilia y Víctor), no se aplica filtro
-    if not entes_usuario or len(entes_usuario) > 40:
-        acceso_total = True
+    acceso_total = not entes_usuario or len(entes_usuario) > 40
 
     if not acceso_total:
         entes_norm = set(entes_usuario)
         resultados = [
             r for r in resultados
-            if any((e or "").strip().upper() in entes_norm for e in r.get("entes", []))
+            if any(any(ent in (e or "").upper() for ent in entes_norm) for e in r.get("entes", []))
         ]
 
-    # Agrupar resultados
     agrupados = {}
     for r in resultados:
-        rfc = (r.get("rfc") or "").strip().upper()
+        rfc = r.get("rfc")
         if not rfc:
             continue
         if rfc not in agrupados:
@@ -182,12 +175,10 @@ def resultados_patrones():
                 "entes": set(),
                 "registros": set()
             }
-
         agrupados[rfc]["quincenas"].add((r.get("fecha_comun", "") or "").strip())
         for e in r.get("entes", []):
             agrupados[rfc]["entes"].add((e or "").strip().upper())
-
-        for reg in r.get("registros", []) or []:
+        for reg in r.get("registros", []):
             clave = (
                 (reg.get("ente", "") or "").strip().upper(),
                 (reg.get("puesto", "") or "").strip().upper(),
@@ -196,10 +187,9 @@ def resultados_patrones():
             )
             agrupados[rfc]["registros"].add(clave)
 
-    # Convertir sets a listas ordenadas
     for rfc, data in agrupados.items():
-        data["quincenas"] = sorted(q for q in data["quincenas"] if q)
-        data["entes"] = sorted(e for e in data["entes"] if e)
+        data["quincenas"] = sorted(list({q for q in data["quincenas"] if q}))
+        data["entes"] = sorted(list({e for e in data["entes"] if e}))
         data["registros"] = [
             {"ente": e, "puesto": p, "fecha_ingreso": fi, "fecha_egreso": fe}
             for (e, p, fi, fe) in sorted(data["registros"])
@@ -214,7 +204,6 @@ def resultados_patrones():
         total=total
     )
 
-
 # ===========================================================
 # RESULTADOS HORARIOS
 # ===========================================================
@@ -222,16 +211,25 @@ def resultados_patrones():
 def resultados_horarios():
     if not session.get("autenticado"):
         return redirect(url_for("login"))
+
     pagina = int(request.args.get("page", 1))
     busqueda = request.args.get("search", "").strip() or None
     limite = 20
+
     resultados, total = db_manager.obtener_resultados_paginados("horarios", busqueda, pagina, limite)
     total_paginas = max(1, ceil(total / limite))
-    return render_template("resultados_horarios.html", resultados=resultados, busqueda=busqueda or "", pagina_actual=pagina, total_paginas=total_paginas, total=total)
 
+    return render_template(
+        "resultados_horarios.html",
+        resultados=resultados,
+        busqueda=busqueda or "",
+        pagina_actual=pagina,
+        total_paginas=total_paginas,
+        total=total
+    )
 
 # ===========================================================
-# EXPORTAR EXCEL (deduplicado y filtrado por usuario)
+# EXPORTAR EXCEL (con filtro por subcadena)
 # ===========================================================
 @app.route("/exportar/<tipo>")
 def exportar_excel(tipo):
@@ -249,15 +247,13 @@ def exportar_excel(tipo):
         return jsonify({"error": f"No hay datos para exportar del tipo '{tipo_db}'"}), 404
 
     entes_usuario = [e.strip().upper() for e in session.get("entes", []) if e.strip()]
-    acceso_total = False
-    if not entes_usuario or len(entes_usuario) > 40:
-        acceso_total = True
+    acceso_total = not entes_usuario or len(entes_usuario) > 40
 
     if not acceso_total:
         entes_norm = set(entes_usuario)
         resultados = [
             r for r in resultados
-            if any((e or "").strip().upper() in entes_norm for e in r.get("entes", []))
+            if any(any(ent in (e or "").upper() for ent in entes_norm) for e in r.get("entes", []))
         ]
 
     wb = Workbook()
@@ -304,11 +300,10 @@ def exportar_excel(tipo):
     return send_file(output, as_attachment=True, download_name=filename,
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-
 # ===========================================================
 # EJECUCIÓN
 # ===========================================================
 if __name__ == "__main__":
-    print("🚀 Iniciando SCIL QNA (multiusuario, control por entes y acceso total) en puerto 4050...")
+    print("🚀 Iniciando SCIL QNA (multiusuario, filtro flexible) en puerto 4050...")
     app.run(host="0.0.0.0", port=4050, debug=True)
 
