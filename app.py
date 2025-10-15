@@ -1,6 +1,6 @@
 # ===========================================================
 # app.py — SCIL QNA 2025 / Sistema de Cruce de Información Laboral
-# Versión final — Agrupación limpia, deduplicación total, exportación auditada
+# Versión final — Multiusuario con control de entes, acceso total
 # ===========================================================
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_file
@@ -20,20 +20,25 @@ UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 db_manager = DatabaseManager()
-CLAVE_MAESTRA = "scil2024"
 
 # ===========================================================
-# LOGIN
+# LOGIN MULTIUSUARIO
 # ===========================================================
 @app.route("/", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
+        usuario = request.form.get("usuario")
         clave = request.form.get("clave")
-        if clave == CLAVE_MAESTRA:
+
+        datos = db_manager.get_usuario(usuario, clave)
+        if datos:
             session["autenticado"] = True
+            session["usuario"] = usuario
+            session["nombre"] = datos["nombre"]
+            session["entes"] = datos["entes"]
             return redirect(url_for("dashboard"))
         else:
-            return render_template("login.html", error="Clave incorrecta")
+            return render_template("login.html", error="Usuario o clave incorrectos")
     return render_template("login.html")
 
 
@@ -50,7 +55,7 @@ def logout():
 def dashboard():
     if not session.get("autenticado"):
         return redirect(url_for("login"))
-    return render_template("dashboard.html")
+    return render_template("dashboard.html", nombre=session.get("nombre", ""))
 
 
 # ===========================================================
@@ -136,7 +141,7 @@ def upload_horarios():
 
 
 # ===========================================================
-# RESULTADOS LABORALES (agrupados y deduplicados)
+# RESULTADOS LABORALES (con filtro de entes)
 # ===========================================================
 @app.route("/resultados")
 def resultados_patrones():
@@ -150,10 +155,24 @@ def resultados_patrones():
     resultados, total = db_manager.obtener_resultados_paginados("laboral", busqueda, pagina, limite)
     total_paginas = max(1, ceil(total / limite))
 
-    agrupados = {}
+    entes_usuario = [e.strip().upper() for e in session.get("entes", []) if e.strip()]
+    acceso_total = False
 
+    # Si el usuario tiene todos los entes (Odilia y Víctor), no se aplica filtro
+    if not entes_usuario or len(entes_usuario) > 40:
+        acceso_total = True
+
+    if not acceso_total:
+        entes_norm = set(entes_usuario)
+        resultados = [
+            r for r in resultados
+            if any((e or "").strip().upper() in entes_norm for e in r.get("entes", []))
+        ]
+
+    # Agrupar resultados
+    agrupados = {}
     for r in resultados:
-        rfc = r.get("rfc")
+        rfc = (r.get("rfc") or "").strip().upper()
         if not rfc:
             continue
         if rfc not in agrupados:
@@ -168,7 +187,7 @@ def resultados_patrones():
         for e in r.get("entes", []):
             agrupados[rfc]["entes"].add((e or "").strip().upper())
 
-        for reg in r.get("registros", []):
+        for reg in r.get("registros", []) or []:
             clave = (
                 (reg.get("ente", "") or "").strip().upper(),
                 (reg.get("puesto", "") or "").strip().upper(),
@@ -177,10 +196,10 @@ def resultados_patrones():
             )
             agrupados[rfc]["registros"].add(clave)
 
-    # Convertir sets a listas limpias y ordenadas
+    # Convertir sets a listas ordenadas
     for rfc, data in agrupados.items():
-        data["quincenas"] = sorted(list({q for q in data["quincenas"] if q}))
-        data["entes"] = sorted(list({e for e in data["entes"] if e}))
+        data["quincenas"] = sorted(q for q in data["quincenas"] if q)
+        data["entes"] = sorted(e for e in data["entes"] if e)
         data["registros"] = [
             {"ente": e, "puesto": p, "fecha_ingreso": fi, "fecha_egreso": fe}
             for (e, p, fi, fe) in sorted(data["registros"])
@@ -212,7 +231,7 @@ def resultados_horarios():
 
 
 # ===========================================================
-# EXPORTAR EXCEL (Robusto y auditado)
+# EXPORTAR EXCEL (deduplicado y filtrado por usuario)
 # ===========================================================
 @app.route("/exportar/<tipo>")
 def exportar_excel(tipo):
@@ -226,10 +245,20 @@ def exportar_excel(tipo):
     tipo_db = TIPO_ALIAS.get(tipo.lower(), tipo.lower())
 
     resultados, _ = db_manager.obtener_resultados_paginados(tipo_db, pagina=1, limite=999999)
-    if not resultados and hasattr(db_manager, "obtener_todos"):
-        resultados = db_manager.obtener_todos(tipo_db)
     if not resultados:
         return jsonify({"error": f"No hay datos para exportar del tipo '{tipo_db}'"}), 404
+
+    entes_usuario = [e.strip().upper() for e in session.get("entes", []) if e.strip()]
+    acceso_total = False
+    if not entes_usuario or len(entes_usuario) > 40:
+        acceso_total = True
+
+    if not acceso_total:
+        entes_norm = set(entes_usuario)
+        resultados = [
+            r for r in resultados
+            if any((e or "").strip().upper() in entes_norm for e in r.get("entes", []))
+        ]
 
     wb = Workbook()
     ws = wb.active
@@ -280,6 +309,6 @@ def exportar_excel(tipo):
 # EJECUCIÓN
 # ===========================================================
 if __name__ == "__main__":
-    print("🚀 Iniciando SCIL QNA (multiarchivo) en puerto 4050...")
+    print("🚀 Iniciando SCIL QNA (multiusuario, control por entes y acceso total) en puerto 4050...")
     app.run(host="0.0.0.0", port=4050, debug=True)
 

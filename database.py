@@ -1,14 +1,14 @@
 # ===========================================================
-# database.py — SCIL / Gestor de Base de Datos Auditor
-# Versión QNA 2025 — soporte a cruces por quincenas
+# database.py — SCIL QNA 2025 / Gestor de Base de Datos Auditor
+# Versión multiusuario con control de entes y contraseñas SHA256
 # ===========================================================
 
 import sqlite3
 import json
 import os
-from datetime import datetime
 import hashlib
 import threading
+from datetime import datetime
 
 class DatabaseManager:
     def __init__(self, db_path='scil.db'):
@@ -47,6 +47,14 @@ class DatabaseManager:
                 fecha_procesamiento TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
+            CREATE TABLE IF NOT EXISTS usuarios (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre TEXT NOT NULL,
+                usuario TEXT UNIQUE NOT NULL,
+                clave TEXT NOT NULL,
+                entes TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_tipo ON resultados(tipo_analisis);
             CREATE INDEX IF NOT EXISTS idx_rfc_tipo ON resultados(rfc, tipo_analisis);
             CREATE INDEX IF NOT EXISTS idx_hash ON resultados(hash_firma);
@@ -54,13 +62,35 @@ class DatabaseManager:
         """)
         conn.commit()
         self._initialized = True
-        print("✅ Base de datos inicializada (modo QNA).")
+        print("✅ Base de datos inicializada correctamente.")
 
     # -------------------------------------------------------
-    # Comparación y guardado
+    # Gestión de usuarios
+    # -------------------------------------------------------
+    def get_usuario(self, usuario, clave):
+        """Valida usuario por nombre y contraseña (hash SHA256)."""
+        conn = self.get_connection()
+        cur = conn.cursor()
+
+        clave_hash = hashlib.sha256(clave.encode('utf-8')).hexdigest()
+        cur.execute("SELECT * FROM usuarios WHERE usuario=? AND clave=?", (usuario, clave_hash))
+        row = cur.fetchone()
+
+        if not row:
+            return None
+
+        data = dict(row)
+        entes = [e.strip().upper() for e in data.get("entes", "").split(",") if e.strip()]
+        # Si el usuario tiene todos los entes (Odilia, Víctor)
+        if len(entes) > 40 or "*" in entes:
+            entes = []
+        data["entes"] = entes
+        return data
+
+    # -------------------------------------------------------
+    # Comparación y guardado de resultados
     # -------------------------------------------------------
     def comparar_con_historico(self, nuevos_resultados, tipo_analisis='laboral'):
-        self.init_db()
         conn = self.get_connection()
         cur = conn.cursor()
         cur.execute("SELECT hash_firma FROM resultados WHERE tipo_analisis=?", (tipo_analisis,))
@@ -92,6 +122,9 @@ class DatabaseManager:
         print(f"🔍 Comparación QNA: {len(nuevos_unicos)} nuevos, {len(repetidos)} repetidos, {len(desaparecidos)} desaparecidos.")
         return nuevos_unicos, repetidos, desaparecidos
 
+    # -------------------------------------------------------
+    # Guardado
+    # -------------------------------------------------------
     def guardar_resultados(self, resultados, tipo_analisis='laboral', nombre_archivo=None):
         if not resultados:
             return 0
@@ -121,18 +154,17 @@ class DatabaseManager:
                 """, (nombre_archivo, tipo_analisis, len(resultados)))
 
             conn.commit()
-            print(f"💾 {nuevos} resultados guardados (modo QNA).")
+            print(f"💾 {nuevos} resultados guardados.")
         except Exception as e:
             conn.rollback()
-            print(f"❌ Error guardando resultados QNA: {e}")
+            print(f"❌ Error guardando resultados: {e}")
             raise
         return nuevos
 
     # -------------------------------------------------------
-    # Lectura paginada
+    # Lectura con paginación
     # -------------------------------------------------------
     def obtener_resultados_paginados(self, tipo_analisis=None, busqueda=None, pagina=1, limite=50):
-        self.init_db()
         conn = self.get_connection()
         cur = conn.cursor()
 
@@ -159,29 +191,4 @@ class DatabaseManager:
             except:
                 continue
         return resultados, total
-
-    # -------------------------------------------------------
-    # Lectura completa para exportar (sin paginación)
-    # -------------------------------------------------------
-    def obtener_todos(self, tipo_analisis=None):
-        """Obtiene todos los resultados almacenados de un tipo específico (sin paginación)."""
-        self.init_db()
-        conn = self.get_connection()
-        cur = conn.cursor()
-
-        if tipo_analisis:
-            cur.execute("SELECT datos FROM resultados WHERE tipo_analisis=? ORDER BY fecha_analisis DESC", (tipo_analisis,))
-        else:
-            cur.execute("SELECT datos FROM resultados ORDER BY fecha_analisis DESC")
-
-        filas = cur.fetchall()
-        resultados = []
-        for f in filas:
-            try:
-                resultados.append(json.loads(f['datos']))
-            except:
-                continue
-
-        print(f"📦 {len(resultados)} registros recuperados para exportación ({tipo_analisis}).")
-        return resultados
 
