@@ -6,6 +6,49 @@
   <title>SCIL - Resultados Laborales</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <style>
+    .rfc-group {
+      background: #f8f9fa;
+      border: 1px solid var(--color-border);
+      border-radius: 10px;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+      padding: 1rem 1.25rem;
+    }
+    .rfc-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: .5rem;
+    }
+    .rfc-header h3 {
+      margin: 0;
+      color: var(--color-primary);
+    }
+    .rfc-header small {
+      color: var(--color-muted);
+    }
+    .qna-badges {
+      margin-top: .5rem;
+    }
+    .qna-badge {
+      display: inline-block;
+      background: #eaf5ff;
+      color: var(--color-primary);
+      border: 1px solid var(--color-primary);
+      border-radius: 8px;
+      padding: .25rem .6rem;
+      font-size: .85rem;
+      font-weight: 600;
+      margin: .15rem;
+    }
+    .ente-tag {
+      display: inline-block;
+      background: #f1f1f1;
+      border-radius: 6px;
+      padding: 2px 6px;
+      margin-right: 4px;
+      font-size: .8rem;
+    }
     .detalle-tabla {
       width: 100%;
       border-collapse: collapse;
@@ -21,14 +64,14 @@
       background: var(--color-bg);
       font-weight: 600;
     }
-    .sin-egreso {
-      color: var(--color-error);
-      font-weight: 600;
-    }
     .detalle-header {
       font-weight: 600;
       color: var(--color-primary);
       margin-top: 1rem;
+    }
+    .sin-egreso {
+      color: var(--color-error);
+      font-weight: 600;
     }
     .pagination {
       display:flex;
@@ -55,7 +98,7 @@
     <div class="nav-container">
       <div class="nav-brand">
         <img src="{{ url_for('static', filename='ofs_logo.png') }}" alt="OFS" style="height:40px;">
-        <div><h1>SCIL</h1><span>Relaciones Laborales</span></div>
+        <div><h1>SCIL</h1><span>Relaciones Laborales — Cruces por Quincena</span></div>
       </div>
       <div class="nav-links">
         <a href="{{ url_for('dashboard') }}" class="nav-link">Inicio</a>
@@ -69,13 +112,13 @@
   <main class="main-content">
     <div class="container">
       <div class="page-header">
-        <h2>Resultados de Auditoría Laboral</h2>
-        <p>Relaciones laborales detectadas con posibles inconsistencias o cruces</p>
+        <h2>Resultados de Auditoría Laboral (Modelo QNA)</h2>
+        <p>Trabajadores con cruces entre entes detectados por quincena</p>
       </div>
 
       <div class="search-section">
         <div class="search-box-minimal">
-          <input type="text" id="searchInput" placeholder="Buscar por RFC, nombre o ente..." value="{{ busqueda }}">
+          <input type="text" id="searchInput" placeholder="Buscar por RFC o nombre..." value="{{ busqueda }}">
           <button onclick="filterResults()" class="btn btn-primary">Buscar</button>
         </div>
         <div class="export-minimal">
@@ -84,65 +127,69 @@
       </div>
 
       {% if resultados %}
-      <div class="results-minimal">
+        {% set grupos = {} %}
         {% for r in resultados %}
-        <div class="result-minimal-card">
-          <div class="result-minimal-header">
-            <div>
-              <h3>{{ r.rfc }}</h3>
-              {% if r.nombre %}
-                <p style="color: var(--color-muted); font-size: 0.9rem;">{{ r.nombre }}</p>
-              {% endif %}
-              <span class="patron-badge">{{ r.tipo_patron|replace('_',' ')|title }}</span>
+          {% if r.rfc not in grupos %}
+            {% set _ = grupos.update({r.rfc: []}) %}
+          {% endif %}
+          {% set _ = grupos[r.rfc].append(r) %}
+        {% endfor %}
+
+        {% for rfc, items in grupos.items() %}
+          <div class="rfc-group">
+            <div class="rfc-header">
+              <h3>{{ rfc }}</h3>
+              <small>{{ items[0].nombre }}</small>
             </div>
-          </div>
 
-          <div class="result-minimal-content">
-            <p>{{ r.descripcion }}</p>
-
-            {% if r.fecha_comun %}
-            <p style="font-size:0.9rem;color:var(--color-muted);margin-top:0.3rem;">
-              <strong>Periodo:</strong> {{ r.fecha_comun }}
-            </p>
-            {% endif %}
-
-            <div class="entes-minimal" style="margin-top:0.5rem;">
-              {% for e in r.entes %}
-                <span class="ente-tag">{{ e }}</span>
+            <div class="qna-badges">
+              {% for i in items %}
+                <span class="qna-badge">Quincena: {{ i.fecha_comun }}</span>
               {% endfor %}
             </div>
 
-            {% if r.registros %}
-            <div class="detalle-header">Detalles detectados:</div>
-            <table class="detalle-tabla">
-              <thead>
-                <tr>
-                  <th>Ente</th>
-                  <th>Hoja</th>
-                  <th>Puesto</th>
-                  <th>Fecha Ingreso</th>
-                  <th>Fecha Egreso</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for reg in r.registros %}
-                <tr>
-                  <td>{{ reg.ente }}</td>
-                  <td>{{ reg.hoja }}</td>
-                  <td>{{ reg.puesto }}</td>
-                  <td>{{ reg.fecha_ingreso or '—' }}</td>
-                  <td class="{% if not reg.fecha_egreso %}sin-egreso{% endif %}">
-                    {{ reg.fecha_egreso or 'Sin Egreso' }}
-                  </td>
-                </tr>
+            {% for i in items %}
+              <p style="margin-top:0.5rem;color:var(--color-muted);">{{ i.descripcion }}</p>
+              <div class="detalle-header">Cruce detectado entre:</div>
+              <div>
+                {% for e in i.entes %}
+                  <span class="ente-tag">{{ e }}</span>
                 {% endfor %}
-              </tbody>
-            </table>
-            {% endif %}
+              </div>
+
+              {% if i.registros %}
+              <table class="detalle-tabla">
+                <thead>
+                  <tr>
+                    <th>Ente</th>
+                    <th>Puesto</th>
+                    <th>Fecha Ingreso</th>
+                    <th>Fecha Egreso</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for reg in i.registros %}
+                  <tr>
+                    <td>{{ reg.ente }}</td>
+                    <td>{{ reg.puesto }}</td>
+                    <td>{{ reg.fecha_ingreso or '—' }}</td>
+                    <td class="{% if not reg.fecha_egreso %}sin-egreso{% endif %}">
+                      {{ reg.fecha_egreso or 'Sin Egreso' }}
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+              {% endif %}
+            {% endfor %}
           </div>
-        </div>
         {% endfor %}
-      </div>
+      {% else %}
+        <div class="empty-state-minimal">
+          <div class="empty-icon">📭</div>
+          <h3>No se encontraron resultados</h3>
+        </div>
+      {% endif %}
 
       {% if total_paginas > 1 %}
       <div class="pagination">
@@ -155,13 +202,6 @@
         {% if pagina_actual < total_paginas %}
           <a href="?page={{ pagina_actual + 1 }}">Siguiente →</a>
         {% endif %}
-      </div>
-      {% endif %}
-
-      {% else %}
-      <div class="empty-state-minimal">
-        <div class="empty-icon">📭</div>
-        <h3>No se encontraron resultados</h3>
       </div>
       {% endif %}
     </div>
