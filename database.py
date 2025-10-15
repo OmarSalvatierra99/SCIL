@@ -128,6 +128,9 @@ class DatabaseManager:
             raise
         return nuevos
 
+    # -------------------------------------------------------
+    # Lectura paginada
+    # -------------------------------------------------------
     def obtener_resultados_paginados(self, tipo_analisis=None, busqueda=None, pagina=1, limite=50):
         self.init_db()
         conn = self.get_connection()
@@ -156,4 +159,29 @@ class DatabaseManager:
             except:
                 continue
         return resultados, total
+
+    # -------------------------------------------------------
+    # Lectura completa para exportar (sin paginación)
+    # -------------------------------------------------------
+    def obtener_todos(self, tipo_analisis=None):
+        """Obtiene todos los resultados almacenados de un tipo específico (sin paginación)."""
+        self.init_db()
+        conn = self.get_connection()
+        cur = conn.cursor()
+
+        if tipo_analisis:
+            cur.execute("SELECT datos FROM resultados WHERE tipo_analisis=? ORDER BY fecha_analisis DESC", (tipo_analisis,))
+        else:
+            cur.execute("SELECT datos FROM resultados ORDER BY fecha_analisis DESC")
+
+        filas = cur.fetchall()
+        resultados = []
+        for f in filas:
+            try:
+                resultados.append(json.loads(f['datos']))
+            except:
+                continue
+
+        print(f"📦 {len(resultados)} registros recuperados para exportación ({tipo_analisis}).")
+        return resultados
 

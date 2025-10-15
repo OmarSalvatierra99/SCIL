@@ -1,15 +1,18 @@
 # ===========================================================
 # app.py — SCIL QNA 2025 / Sistema de Cruce de Información Laboral
-# Soporte multiarchivo para análisis laboral y de horarios
+# Versión final — Soporte multiarchivo, exportación Excel, fusión de archivos
 # ===========================================================
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session, Response
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_file
 from werkzeug.utils import secure_filename
 from database import DatabaseManager
 from data_processor import DataProcessor
 from horarios_processor import HorariosProcessor
 import os
 from math import ceil
+from openpyxl import Workbook
+from io import BytesIO
+from datetime import datetime
 
 app = Flask(__name__)
 app.secret_key = "scil_tlax_2025"
@@ -57,7 +60,6 @@ def dashboard():
 def upload_laboral():
     if not session.get("autenticado"):
         return jsonify({"error": "Sesión expirada. Inicie sesión nuevamente."}), 403
-
     try:
         files = request.files.getlist("files")
         if not files:
@@ -65,14 +67,19 @@ def upload_laboral():
 
         filepaths = []
         for file in files:
-            filename = secure_filename(file.filename)
-            filepath = os.path.join(UPLOAD_FOLDER, filename)
-            file.save(filepath)
-            filepaths.append(filepath)
-            print(f"📁 Guardado archivo laboral: {filename}")
+            fname = secure_filename(file.filename)
+            path = os.path.join(UPLOAD_FOLDER, fname)
+            file.save(path)
+            filepaths.append(path)
+            print(f"📁 Guardado archivo laboral: {fname}")
 
         processor = DataProcessor()
-        resultados_totales = processor.procesar_archivos(filepaths)
+        if hasattr(processor, "procesar_archivos"):
+            resultados_totales = processor.procesar_archivos(filepaths)
+        else:
+            resultados_totales = []
+            for p in filepaths:
+                resultados_totales.extend(processor.procesar_archivo(p))
 
         nuevos, repetidos, desaparecidos = db_manager.comparar_con_historico(resultados_totales, tipo_analisis="laboral")
         guardados = db_manager.guardar_resultados(nuevos, tipo_analisis="laboral", nombre_archivo=f"{len(files)}_archivos_QNA")
@@ -85,7 +92,6 @@ def upload_laboral():
             "desaparecidos": len(desaparecidos),
             "guardados": guardados
         })
-
     except Exception as e:
         print(f"❌ Error en /upload: {e}")
         return jsonify({"error": str(e)}), 500
@@ -98,24 +104,19 @@ def upload_laboral():
 def upload_horarios():
     if not session.get("autenticado"):
         return jsonify({"error": "Sesión expirada. Inicie sesión nuevamente."}), 403
-
     try:
         files = request.files.getlist("files")
         if not files:
             return jsonify({"error": "No se proporcionaron archivos"}), 400
 
-        filepaths = []
-        for file in files:
-            filename = secure_filename(file.filename)
-            filepath = os.path.join(UPLOAD_FOLDER, filename)
-            file.save(filepath)
-            filepaths.append(filepath)
-            print(f"📁 Guardado archivo horario: {filename}")
-
         processor = HorariosProcessor()
         resultados_totales = []
-        for filepath in filepaths:
-            resultados = processor.procesar_archivo(filepath)
+        for file in files:
+            fname = secure_filename(file.filename)
+            path = os.path.join(UPLOAD_FOLDER, fname)
+            file.save(path)
+            print(f"📁 Procesando horarios: {fname}")
+            resultados = processor.procesar_archivo(path)
             resultados_totales.extend(resultados)
 
         nuevos, repetidos, desaparecidos = db_manager.comparar_con_historico(resultados_totales, tipo_analisis="horarios")
@@ -129,14 +130,13 @@ def upload_horarios():
             "desaparecidos": len(desaparecidos),
             "guardados": guardados
         })
-
     except Exception as e:
         print(f"❌ Error en /upload_horarios: {e}")
         return jsonify({"error": str(e)}), 500
 
 
 # ===========================================================
-# RESULTADOS
+# RESULTADOS (Laborales y Horarios)
 # ===========================================================
 @app.route("/resultados")
 def resultados_patrones():
@@ -163,21 +163,60 @@ def resultados_horarios():
 
 
 # ===========================================================
-# EXPORTAR CSV
+# EXPORTAR EXCEL (Robusto y auditado)
 # ===========================================================
 @app.route("/exportar/<tipo>")
-def exportar_csv(tipo):
+def exportar_excel(tipo):
     if not session.get("autenticado"):
         return redirect(url_for("login"))
-    resultados, _ = db_manager.obtener_resultados_paginados(tipo, pagina=1, limite=99999)
 
-    def generar():
-        yield "RFC,Tipo,Descripción,Entes,Periodo\n"
-        for r in resultados:
-            yield f"{r.get('rfc','')},{r.get('tipo_patron','')},{r.get('descripcion','')},{'|'.join(r.get('entes',[]))},{r.get('fecha_comun','')}\n"
+    TIPO_ALIAS = {
+        "patron": "laboral", "patrones": "laboral", "laborales": "laboral",
+        "laboral": "laboral", "horario": "horarios", "horarios": "horarios"
+    }
+    tipo_db = TIPO_ALIAS.get(tipo.lower(), tipo.lower())
 
-    return Response(generar(), mimetype="text/csv",
-                    headers={"Content-Disposition": f"attachment; filename={tipo}_export.csv"})
+    resultados, _ = db_manager.obtener_resultados_paginados(tipo_db, pagina=1, limite=999999)
+    if not resultados and hasattr(db_manager, "obtener_todos"):
+        resultados = db_manager.obtener_todos(tipo_db)
+    if not resultados:
+        return jsonify({"error": f"No hay datos para exportar del tipo '{tipo_db}'"}), 404
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Resultados"
+
+    headers = [
+        "RFC", "Nombre", "Tipo de Hallazgo", "Descripción",
+        "Entes Involucrados", "Quincena", "Ente", "Puesto",
+        "Fecha Ingreso", "Fecha Egreso"
+    ]
+    ws.append(headers)
+
+    for r in resultados:
+        rfc = r.get("rfc", "")
+        nombre = r.get("nombre", "")
+        tipo_patron = r.get("tipo_patron", "")
+        descripcion = r.get("descripcion", "")
+        entes_str = " | ".join(r.get("entes", []))
+        quincena = r.get("fecha_comun", "")
+        for reg in (r.get("registros", []) or [{}]):
+            ws.append([
+                rfc, nombre, tipo_patron, descripcion, entes_str, quincena,
+                reg.get("ente", ""), reg.get("puesto", ""),
+                reg.get("fecha_ingreso", ""), reg.get("fecha_egreso", "")
+            ])
+
+    for col in ws.columns:
+        width = min(max(len(str(c.value)) if c.value else 0 for c in col) + 2, 50)
+        ws.column_dimensions[col[0].column_letter].width = width
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    filename = f"Resultados_{tipo_db.upper()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return send_file(output, as_attachment=True, download_name=filename,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 # ===========================================================
