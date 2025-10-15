@@ -68,6 +68,12 @@
       color: var(--color-error);
       font-weight: 600;
     }
+    .chk-solventar {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+      accent-color: var(--color-primary, #004aad);
+    }
   </style>
 </head>
 <body>
@@ -99,7 +105,7 @@
           <button onclick="filterResults()" class="btn btn-primary">Buscar</button>
         </div>
         <div class="export-minimal">
-          <a href="/exportar/laboral" class="btn btn-secondary">Exportar</a>
+          <a href="/exportar/laboral" class="btn btn-secondary">Exportar no solventadas</a>
         </div>
       </div>
 
@@ -132,6 +138,7 @@
                 <th>Puesto</th>
                 <th>Fecha Ingreso</th>
                 <th>Fecha Egreso</th>
+                <th>Solventado</th>
               </tr>
             </thead>
             <tbody>
@@ -142,6 +149,24 @@
                 <td>{{ reg.fecha_ingreso or '—' }}</td>
                 <td class="{% if not reg.fecha_egreso %}sin-egreso{% endif %}">
                   {{ reg.fecha_egreso or 'Sin Egreso' }}
+                </td>
+                <td style="text-align:center;">
+                  {% if reg.solventado %}
+                    <input type="checkbox" class="chk-solventar"
+                      data-rfc="{{ rfc }}"
+                      data-ente="{{ reg.ente }}"
+                      data-puesto="{{ reg.puesto }}"
+                      data-fi="{{ reg.fecha_ingreso }}"
+                      data-fe="{{ reg.fecha_egreso }}"
+                      checked>
+                  {% else %}
+                    <input type="checkbox" class="chk-solventar"
+                      data-rfc="{{ rfc }}"
+                      data-ente="{{ reg.ente }}"
+                      data-puesto="{{ reg.puesto }}"
+                      data-fi="{{ reg.fecha_ingreso }}"
+                      data-fe="{{ reg.fecha_egreso }}">
+                  {% endif %}
                 </td>
               </tr>
               {% endfor %}
@@ -166,6 +191,37 @@
       if (search) params.set('search', search);
       window.location.href = '?' + params.toString();
     }
+
+    // Manejo del check para solventar
+    document.addEventListener('change', async (e) => {
+      if (!e.target.classList.contains('chk-solventar')) return;
+
+      const chk = e.target;
+      const payload = {
+        rfc: chk.dataset.rfc,
+        ente: chk.dataset.ente,
+        puesto: chk.dataset.puesto,
+        fecha_ingreso: chk.dataset.fi,
+        fecha_egreso: chk.dataset.fe,
+        estado: chk.checked ? 1 : 0
+      };
+
+      try {
+        const res = await fetch('/api/solvencia/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          alert('Error: ' + (data.error || 'no especificado'));
+          chk.checked = !chk.checked;
+        }
+      } catch (err) {
+        alert('Error de conexión con el servidor');
+        chk.checked = !chk.checked;
+      }
+    });
   </script>
 </body>
 </html>
