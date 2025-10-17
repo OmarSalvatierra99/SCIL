@@ -1,6 +1,6 @@
 # ===========================================================
 # app.py — SCIL QNA 2025 / Sistema de Cruce de Información Laboral
-# Multiusuario, control por entes, deduplicación, solvencias, export sólo no-solventadas
+# Versión completa y corregida con endpoints de carga y solvencia
 # ===========================================================
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_file
@@ -15,10 +15,10 @@ from io import BytesIO
 from datetime import datetime
 
 # ---------------------------
-# Config
+# Configuración
 # ---------------------------
 app = Flask(__name__)
-app.secret_key = "scil_tlax_2025"
+app.secret_key = os.environ.get("SCIL_SECRET", "scil_tlax_2025")
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
@@ -38,7 +38,6 @@ def _sanitize_text(s: str) -> str:
     return s
 
 def _ente_match(ente_str: str, allowed_tokens):
-    """Coincidencia por subcadenas: si cualquiera de los tokens aparece dentro del nombre del ente."""
     if not allowed_tokens:
         return False
     ent = _sanitize_text(ente_str)
@@ -55,6 +54,15 @@ def _row_key(rfc, ente, puesto, fi, fe):
     base = f"{(rfc or '').upper()}|{(ente or '').upper()}|{(puesto or '').upper()}|{fi or ''}|{fe or ''}"
     return hashlib.sha256(base.encode("utf-8")).hexdigest()
 
+def _limpiar_nombre_ente(ente: str) -> str:
+    if not ente:
+        return ""
+    partes = re.split(r"[_.]", ente)
+    for p in reversed(partes):
+        if len(p) >= 3 and not p.lower().endswith(("xlsx","xls")):
+            return p.upper()
+    return ente.upper()
+
 def _ensure_solvencias_table():
     conn = db_manager.get_connection()
     cur = conn.cursor()
@@ -67,17 +75,15 @@ def _ensure_solvencias_table():
             puesto TEXT,
             fecha_ingreso TEXT,
             fecha_egreso TEXT,
-            estado INTEGER DEFAULT 0,  -- 0 = No solventado, 1 = Solventado
+            monto TEXT,
+            estado INTEGER DEFAULT 0,
             usuario TEXT,
             ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_solv_key ON solvencias(key_hash)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_solv_rfc ON solvencias(rfc)")
     conn.commit()
 
 def _get_solvencia_map(keys):
-    """Devuelve dict key_hash -> estado (0/1)."""
     if not keys:
         return {}
     conn = db_manager.get_connection()
@@ -89,7 +95,7 @@ def _get_solvencia_map(keys):
 _ensure_solvencias_table()
 
 # ===========================================================
-# LOGIN MULTIUSUARIO
+# LOGIN / LOGOUT / DASHBOARD
 # ===========================================================
 @app.route("/", methods=["GET", "POST"])
 def login():
@@ -101,7 +107,7 @@ def login():
             session["autenticado"] = True
             session["usuario"] = usuario
             session["nombre"] = datos["nombre"]
-            session["entes"] = datos["entes"]  # lista de tokens
+            session["entes"] = datos["entes"]
             return redirect(url_for("dashboard"))
         else:
             return render_template("login.html", error="Usuario o clave incorrectos")
@@ -112,9 +118,6 @@ def logout():
     session.clear()
     return redirect(url_for("login"))
 
-# ===========================================================
-# DASHBOARD
-# ===========================================================
 @app.route("/dashboard")
 def dashboard():
     if not session.get("autenticado"):
@@ -122,87 +125,7 @@ def dashboard():
     return render_template("dashboard.html", nombre=session.get("nombre",""))
 
 # ===========================================================
-# PROCESAMIENTO LABORAL (multiarchivo)
-# ===========================================================
-@app.route("/upload", methods=["POST"])
-def upload_laboral():
-    if not session.get("autenticado"):
-        return jsonify({"error": "Sesión expirada. Inicie sesión nuevamente."}), 403
-    try:
-        files = request.files.getlist("files")
-        if not files:
-            return jsonify({"error": "No se proporcionaron archivos"}), 400
-
-        filepaths = []
-        for file in files:
-            fname = secure_filename(file.filename)
-            path = os.path.join(UPLOAD_FOLDER, fname)
-            file.save(path)
-            filepaths.append(path)
-            print(f"📁 Guardado archivo laboral: {fname}")
-
-        processor = DataProcessor()
-        resultados_totales = []
-        if hasattr(processor, "procesar_archivos"):
-            resultados_totales = processor.procesar_archivos(filepaths)
-        else:
-            for p in filepaths:
-                resultados_totales.extend(processor.procesar_archivo(p))
-
-        nuevos, repetidos, desaparecidos = db_manager.comparar_con_historico(resultados_totales, tipo_analisis="laboral")
-        guardados = db_manager.guardar_resultados(nuevos, tipo_analisis="laboral", nombre_archivo=f"{len(files)}_archivos_QNA")
-
-        return jsonify({
-            "mensaje": f"Procesamiento de {len(files)} archivo(s) completado",
-            "total_resultados": len(resultados_totales),
-            "nuevos": len(nuevos),
-            "repetidos": len(repetidos),
-            "desaparecidos": len(desaparecidos),
-            "guardados": guardados
-        })
-    except Exception as e:
-        print(f"❌ Error en /upload: {e}")
-        return jsonify({"error": str(e)}), 500
-
-# ===========================================================
-# PROCESAMIENTO HORARIOS (multiarchivo)
-# ===========================================================
-@app.route("/upload_horarios", methods=["POST"])
-def upload_horarios():
-    if not session.get("autenticado"):
-        return jsonify({"error": "Sesión expirada. Inicie sesión nuevamente."}), 403
-    try:
-        files = request.files.getlist("files")
-        if not files:
-            return jsonify({"error": "No se proporcionaron archivos"}), 400
-
-        processor = HorariosProcessor()
-        resultados_totales = []
-        for file in files:
-            fname = secure_filename(file.filename)
-            path = os.path.join(UPLOAD_FOLDER, fname)
-            file.save(path)
-            print(f"📁 Procesando horarios: {fname}")
-            resultados = processor.procesar_archivo(path)
-            resultados_totales.extend(resultados)
-
-        nuevos, repetidos, desaparecidos = db_manager.comparar_con_historico(resultados_totales, tipo_analisis="horarios")
-        guardados = db_manager.guardar_resultados(nuevos, tipo_analisis="horarios", nombre_archivo=f"{len(files)}_archivos_horarios")
-
-        return jsonify({
-            "mensaje": f"Procesamiento de {len(files)} archivo(s) de horarios completado",
-            "total_resultados": len(resultados_totales),
-            "nuevos": len(nuevos),
-            "repetidos": len(repetidos),
-            "desaparecidos": len(desaparecidos),
-            "guardados": guardados
-        })
-    except Exception as e:
-        print(f"❌ Error en /upload_horarios: {e}")
-        return jsonify({"error": str(e)}), 500
-
-# ===========================================================
-# RESULTADOS LABORALES (con filtro de entes por subcadenas)
+# RESULTADOS LABORALES
 # ===========================================================
 @app.route("/resultados")
 def resultados_patrones():
@@ -214,251 +137,183 @@ def resultados_patrones():
     limite = 20
 
     resultados, total = db_manager.obtener_resultados_paginados("laboral", busqueda, pagina, limite)
-
     entes_usuario = session.get("entes", [])
-    if not _allowed_all(entes_usuario) and entes_usuario:
-        filtrados = []
-        for r in resultados:
-            entes_r = r.get("entes", []) or []
-            if any(_ente_match(e, entes_usuario) for e in entes_r):
-                filtrados.append(r)
-        resultados = filtrados
 
-    # Agrupar por RFC y deduplicar registros
-    agrupados = {}
-    row_keys = set()
+    if not _allowed_all(entes_usuario) and entes_usuario:
+        resultados = [r for r in resultados if any(_ente_match(e, entes_usuario) for e in (r.get("entes") or []))]
+
+    agrupados, row_keys = {}, set()
     for r in resultados:
         rfc = r.get("rfc")
         if not rfc:
             continue
         if rfc not in agrupados:
-            agrupados[rfc] = {
-                "nombre": r.get("nombre", ""),
-                "quincenas": set(),
-                "entes": set(),
-                "registros": []  # dicts
-            }
-        q = (r.get("fecha_comun", "") or "").strip()
-        if q:
-            agrupados[rfc]["quincenas"].add(q)
+            agrupados[rfc] = {"nombre": r.get("nombre", ""), "quincenas": set(), "entes": set(), "registros": []}
+        if r.get("fecha_comun"):
+            agrupados[rfc]["quincenas"].add(r["fecha_comun"])
         for e in r.get("entes", []) or []:
-            if e:
-                agrupados[rfc]["entes"].add(e)
-
+            agrupados[rfc]["entes"].add(_limpiar_nombre_ente(e))
         for reg in r.get("registros", []) or []:
-            e = (reg.get("ente","") or "").strip()
+            e = _limpiar_nombre_ente(reg.get("ente",""))
             p = (reg.get("puesto","") or "").strip()
-            fi = (reg.get("fecha_ingreso","") or "").strip()
-            fe = (reg.get("fecha_egreso","") or "").strip()
+            fi, fe = (reg.get("fecha_ingreso","") or "").strip(), (reg.get("fecha_egreso","") or "").strip()
+            monto = str(reg.get("monto","") or "")
             k = (rfc, e.upper(), p.upper(), fi, fe)
-            if k in row_keys:
-                continue
-            row_keys.add(k)
-            agrupados[rfc]["registros"].append({
-                "ente": e, "puesto": p, "fecha_ingreso": fi, "fecha_egreso": fe
-            })
+            if k not in row_keys:
+                row_keys.add(k)
+                agrupados[rfc]["registros"].append({
+                    "ente": e, "puesto": p,
+                    "fecha_ingreso": fi, "fecha_egreso": fe, "monto": monto
+                })
 
-    # Cargar solvencias para marcar estado
-    all_keys = []
-    for rfc, info in agrupados.items():
-        for reg in info["registros"]:
-            all_keys.append(_row_key(rfc, reg["ente"], reg["puesto"], reg["fecha_ingreso"], reg["fecha_egreso"]))
+    all_keys = [_row_key(rfc, reg["ente"], reg["puesto"], reg["fecha_ingreso"], reg["fecha_egreso"])
+                for rfc, info in agrupados.items() for reg in info["registros"]]
     solv_map = _get_solvencia_map(all_keys)
 
     for rfc, info in agrupados.items():
-        info["quincenas"] = sorted(list(info["quincenas"]))
-        info["entes"] = sorted(list(info["entes"]))
+        info["quincenas"] = sorted(info["quincenas"])
+        info["entes"] = sorted(info["entes"])
         for reg in info["registros"]:
             k = _row_key(rfc, reg["ente"], reg["puesto"], reg["fecha_ingreso"], reg["fecha_egreso"])
             reg["solventado"] = 1 if solv_map.get(k, 0) == 1 else 0
-            reg["key_hash"] = k  # útil para el front
+            reg["key_hash"] = k
 
     total_paginas = max(1, ceil(total / limite))
-    return render_template(
-        "resultados.html",
-        resultados_agrupados=agrupados,
-        busqueda=busqueda or "",
-        pagina_actual=pagina,
-        total_paginas=total_paginas,
-        total=total
-    )
+    return render_template("resultados.html",
+                           resultados_agrupados=agrupados,
+                           busqueda=busqueda or "",
+                           pagina_actual=pagina,
+                           total_paginas=total_paginas,
+                           total=total)
 
 # ===========================================================
-# RESULTADOS HORARIOS (ruta básica para evitar BuildError)
+# EXPORTAR LABORAL
+# ===========================================================
+@app.route("/exportar/laboral")
+def exportar_laboral():
+    if not session.get("autenticado"):
+        return redirect(url_for("login"))
+    resultados, _ = db_manager.obtener_resultados_paginados("laboral", pagina=1, limite=999999)
+    entes_usuario = session.get("entes", [])
+    if not _allowed_all(entes_usuario) and entes_usuario:
+        resultados = [r for r in resultados if any(_ente_match(e, entes_usuario) for e in (r.get("entes") or []))]
+
+    filas, vistos = [], set()
+    for r in resultados:
+        rfc, nombre, qna = (r.get("rfc","") or "").upper(), r.get("nombre","") or "", r.get("fecha_comun","") or ""
+        entes = sorted(list({_limpiar_nombre_ente(e) for e in (r.get("entes") or []) if e}))
+        while len(entes) < 2:
+            entes.append("")
+        for reg in r.get("registros", []):
+            fila = [rfc, nombre, qna, entes[0], entes[1],
+                    reg.get("puesto",""), reg.get("fecha_ingreso",""),
+                    reg.get("fecha_egreso",""), reg.get("monto","")]
+            if tuple(fila) not in vistos:
+                vistos.add(tuple(fila))
+                filas.append(fila)
+
+    if not filas:
+        return jsonify({"error": "No hay datos para exportar"}), 404
+
+    wb = Workbook(); ws = wb.active; ws.title = "Laborales"
+    ws.append(["RFC","Nombre","Quincena","Ente 1","Ente 2","Puesto","Fecha Alta","Fecha Baja","Monto"])
+    for f in filas: ws.append(f)
+    for col in ws.columns:
+        width = min(max(len(str(c.value)) if c.value else 0 for c in col) + 2, 50)
+        ws.column_dimensions[col[0].column_letter].width = width
+    out = BytesIO(); wb.save(out); out.seek(0)
+    filename = f"SCIL_Laborales_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return send_file(out, as_attachment=True, download_name=filename,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+# ===========================================================
+# RESULTADOS HORARIOS
 # ===========================================================
 @app.route("/resultados_horarios")
 def resultados_horarios():
     if not session.get("autenticado"):
         return redirect(url_for("login"))
-    pagina = int(request.args.get("page", 1))
-    busqueda = request.args.get("search", "").strip() or None
-    limite = 20
-    resultados, total = db_manager.obtener_resultados_paginados("horarios", busqueda, pagina, limite)
-    total_paginas = max(1, ceil(total / limite))
-    return render_template(
-        "resultados_horarios.html",
-        resultados=resultados,
-        busqueda=busqueda or "",
-        pagina_actual=pagina,
-        total_paginas=total_paginas,
-        total=total
-    )
+    return render_template("resultados.html", resultados_agrupados={}, busqueda="",
+                           pagina_actual=1, total_paginas=1, total=0)
 
 # ===========================================================
-# API: Toggle Solvencia (sólo entes del usuario)
+# SUBIDA DE ARCHIVOS (Laborales y Horarios)
+# ===========================================================
+def _save_uploads(field_name="files"):
+    files = request.files.getlist(field_name)
+    if not files:
+        return [], "No se recibieron archivos"
+    paths = []
+    for f in files:
+        fname = secure_filename(f.filename)
+        path = os.path.join(UPLOAD_FOLDER, fname)
+        f.save(path)
+        paths.append(path)
+    return paths, None
+
+@app.route("/upload", methods=["POST"])
+def upload_laboral():
+    if not session.get("autenticado"):
+        return jsonify({"error": "No autorizado"}), 403
+    paths, err = _save_uploads("files")
+    if err:
+        return jsonify({"error": err}), 400
+    processor = DataProcessor()
+    resultados = processor.procesar_archivos(paths)
+    nuevos, repetidos, _ = db_manager.comparar_con_historico(resultados, "laboral")
+    db_manager.guardar_resultados(nuevos, "laboral", nombre_archivo=os.path.basename(paths[0]) if paths else None)
+    return jsonify({"mensaje": "Archivos procesados correctamente",
+                    "total_resultados": len(resultados), "nuevos": len(nuevos)})
+
+@app.route("/upload_horarios", methods=["POST"])
+def upload_horarios():
+    if not session.get("autenticado"):
+        return jsonify({"error": "No autorizado"}), 403
+    paths, err = _save_uploads("files")
+    if err:
+        return jsonify({"error": err}), 400
+    try:
+        hp = HorariosProcessor()
+        resultados = hp.procesar_archivos(paths)
+    except Exception as e:
+        return jsonify({"error": f"No implementado o error en HorariosProcessor: {e}"}), 500
+    nuevos, repetidos, _ = db_manager.comparar_con_historico(resultados, "horarios")
+    db_manager.guardar_resultados(nuevos, "horarios", nombre_archivo=os.path.basename(paths[0]) if paths else None)
+    return jsonify({"mensaje": "Horarios procesados correctamente",
+                    "total_resultados": len(resultados), "nuevos": len(nuevos)})
+
+# ===========================================================
+# API DE SOLVENCIA (checkbox resultados.html)
 # ===========================================================
 @app.route("/api/solvencia/toggle", methods=["POST"])
-def api_toggle_solvencia():
+def api_solvencia_toggle():
     if not session.get("autenticado"):
-        return jsonify({"ok": False, "error": "Sesión expirada"}), 403
-
-    data = request.get_json(force=True) or {}
-    rfc = (data.get("rfc") or "").strip().upper()
-    ente = (data.get("ente") or "").strip()
-    puesto = (data.get("puesto") or "").strip()
-    fi = (data.get("fecha_ingreso") or "").strip()
-    fe = (data.get("fecha_egreso") or "").strip()
-    estado = 1 if str(data.get("estado","0")) in {"1","true","True"} else 0
-
-    # Verificación de permisos por ente
-    entes_usuario = session.get("entes", [])
-    if not _allowed_all(entes_usuario):
-        if not _ente_match(ente, entes_usuario):
-            return jsonify({"ok": False, "error": "No autorizado para marcar este ente"}), 403
-
-    key = _row_key(rfc, ente, puesto, fi, fe)
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+    data = request.get_json(force=True, silent=True) or {}
+    rfc = (data.get("rfc") or "").upper()
+    ente = (data.get("ente") or "").upper()
+    puesto = (data.get("puesto") or "").upper()
+    fi, fe = data.get("fecha_ingreso") or "", data.get("fecha_egreso") or ""
+    estado = 1 if data.get("estado") in (1, "1", True, "true", "True") else 0
+    if not rfc or not ente:
+        return jsonify({"ok": False, "error": "Datos incompletos"}), 400
+    key_hash = _row_key(rfc, ente, puesto, fi, fe)
+    usuario = session.get("usuario", "anon")
     conn = db_manager.get_connection()
     cur = conn.cursor()
     cur.execute("""
         INSERT INTO solvencias (key_hash, rfc, ente, puesto, fecha_ingreso, fecha_egreso, estado, usuario)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(key_hash) DO UPDATE SET estado=excluded.estado, usuario=excluded.usuario, ts=CURRENT_TIMESTAMP
-    """, (key, rfc, ente, puesto, fi, fe, estado, session.get("usuario","")))
+        ON CONFLICT(key_hash) DO UPDATE SET
+            estado=excluded.estado, usuario=excluded.usuario, ts=CURRENT_TIMESTAMP
+    """, (key_hash, rfc, ente, puesto, fi, fe, estado, usuario))
     conn.commit()
-    return jsonify({"ok": True, "key": key, "estado": estado})
+    return jsonify({"ok": True, "key_hash": key_hash, "estado": estado})
 
 # ===========================================================
-# EXPORTAR EXCEL — Sólo NO solventadas
-# ===========================================================
-@app.route("/exportar/<tipo>")
-def exportar_excel(tipo):
-    if not session.get("autenticado"):
-        return redirect(url_for("login"))
-
-    alias = {
-        "patron": "laboral", "patrones": "laboral", "laborales": "laboral",
-        "laboral": "laboral", "horario": "horarios", "horarios": "horarios"
-    }
-    tipo_db = alias.get(tipo.lower(), tipo.lower())
-
-    resultados, _ = db_manager.obtener_resultados_paginados(tipo_db, pagina=1, limite=999999)
-
-    # Filtro por entes del usuario (subcadenas)
-    entes_usuario = session.get("entes", [])
-    if tipo_db == "laboral" and not _allowed_all(entes_usuario) and entes_usuario:
-        filtrados = []
-        for r in resultados:
-            entes_r = r.get("entes", []) or []
-            if any(_ente_match(e, entes_usuario) for e in entes_r):
-                filtrados.append(r)
-        resultados = filtrados
-
-    if tipo_db == "laboral":
-        # Sólo no solventadas
-        filas = []
-        vistos = set()
-        all_keys = []
-
-        # Preparar mapa de solvencias
-        temp_keys = []
-        temp_rows = []
-        for r in resultados:
-            rfc = (r.get("rfc","") or "").upper()
-            nombre = (r.get("nombre","") or "")
-            tipo_patron = (r.get("tipo_patron","") or "")
-            descripcion = (r.get("descripcion","") or "")
-            quincena = (r.get("fecha_comun","") or "")
-            entes_str = " | ".join(sorted(set([e for e in (r.get("entes") or []) if e])))
-
-            regs = r.get("registros", []) or [{}]
-            for reg in regs:
-                ente = reg.get("ente","")
-                puesto = reg.get("puesto","")
-                fi = reg.get("fecha_ingreso","")
-                fe = reg.get("fecha_egreso","")
-                k = _row_key(rfc, ente, puesto, fi, fe)
-                temp_keys.append(k)
-                temp_rows.append((k, [rfc, nombre, tipo_patron, descripcion, entes_str, quincena, ente, puesto, fi, fe]))
-
-        solv_map = _get_solvencia_map(temp_keys)
-
-        for k, row in temp_rows:
-            if solv_map.get(k, 0) == 1:
-                continue  # solventada -> NO se exporta
-            t = tuple(row)
-            if t in vistos:
-                continue
-            vistos.add(t)
-            filas.append(row)
-
-        if not filas:
-            return jsonify({"error": "No hay no-solventadas para exportar"}), 404
-
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "No Solventadas"
-        ws.append(["RFC","Nombre","Tipo de Hallazgo","Descripción","Entes Involucrados","Quincena","Ente","Puesto","Fecha Ingreso","Fecha Egreso"])
-        for f in filas:
-            ws.append(f)
-        for col in ws.columns:
-            width = min(max(len(str(c.value)) if c.value else 0 for c in col) + 2, 50)
-            ws.column_dimensions[col[0].column_letter].width = width
-        out = BytesIO()
-        wb.save(out)
-        out.seek(0)
-        filename = f"NoSolventadas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-        return send_file(out, as_attachment=True, download_name=filename,
-                         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-    else:
-        # Export básico para horarios
-        if not resultados:
-            return jsonify({"error": f"No hay datos para exportar del tipo '{tipo_db}'"}), 404
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Resultados Horarios"
-        ws.append(["RFC","Nombre","Tipo","Descripción","Día","Ente/Plantel","Entrada","Salida","Fecha Ingreso","Fecha Egreso"])
-        vistos = set()
-        for r in resultados:
-            base = [r.get("rfc",""), r.get("nombre",""), r.get("tipo_patron",""), r.get("descripcion",""), r.get("fecha_comun","")]
-            regs = r.get("registros", []) or [{}]
-            for reg in regs:
-                row = base + [
-                    reg.get("ente",""),
-                    reg.get("hora_entrada","") or reg.get("puesto",""),
-                    reg.get("hora_salida","") or "",
-                    reg.get("fecha_ingreso",""),
-                    reg.get("fecha_egreso","")
-                ]
-                t = tuple(row)
-                if t in vistos: 
-                    continue
-                vistos.add(t)
-                ws.append(row)
-        for col in ws.columns:
-            width = min(max(len(str(c.value)) if c.value else 0 for c in col) + 2, 50)
-            ws.column_dimensions[col[0].column_letter].width = width
-        out = BytesIO()
-        wb.save(out)
-        out.seek(0)
-        filename = f"Resultados_HORARIOS_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-        return send_file(out, as_attachment=True, download_name=filename,
-                         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-# ===========================================================
-# EJECUCIÓN
+# MAIN
 # ===========================================================
 if __name__ == "__main__":
-    print("🚀 Iniciando SCIL QNA (multiusuario, control por entes, solvencias) en puerto 4050...")
+    print("🚀 Iniciando SCIL QNA 2025...")
     app.run(host="0.0.0.0", port=4050, debug=True)
 

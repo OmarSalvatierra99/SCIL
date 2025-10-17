@@ -68,9 +68,12 @@ class DataProcessor:
                 rfc_col, nombre_col, puesto_col, f_ing, f_egr, qnas = self.detectar_columnas(df)
 
                 if not rfc_col or not qnas:
+                    print(f"⚠️  Hoja omitida: {sheet} — columnas insuficientes ({list(df.columns)})")
                     continue
 
                 ente_label = f"{nombre_archivo}_{sheet}"
+                registros_validos = 0
+
                 for _, row in df.iterrows():
                     rfc = self.limpiar_rfc(row.get(rfc_col))
                     if not rfc:
@@ -84,10 +87,22 @@ class DataProcessor:
                         "qnas": {q: row.get(q) for q in qnas},
                     }
                     entes_rfc[rfc].append(registro)
+                    registros_validos += 1
+
+                print(f"   → {sheet}: {registros_validos} registros válidos")
 
         resultados = self._cruces_quincenales(entes_rfc)
         print(f"📈 {len(resultados)} hallazgos laborales generados (modelo QNA).")
         return resultados
+
+    # ----------------------------------------------------
+    # FUNCIÓN DE APOYO: VALIDACIÓN DE ACTIVIDAD EN QNA
+    # ----------------------------------------------------
+    def _es_activo(self, valor):
+        if pd.isna(valor):
+            return False
+        s = str(valor).strip().upper()
+        return s not in {"", "0", "0.0", "NO", "N/A", "NA", "NONE"}
 
     # ----------------------------------------------------
     # REGLAS AUDITORAS — CRUCES ENTRE ENTES POR QNA
@@ -98,9 +113,9 @@ class DataProcessor:
             if len(registros) < 2:
                 continue
 
-            # Detectar quincenas con valor no vacío
+            # Detectar quincenas con valor no vacío o no nulo
             qnas_presentes = sorted(
-                {q for r in registros for q, v in r["qnas"].items() if pd.notna(v) and str(v).strip() != ""}
+                {q for r in registros for q, v in r["qnas"].items() if self._es_activo(v)}
             )
             if not qnas_presentes:
                 continue
@@ -108,7 +123,7 @@ class DataProcessor:
             for qna in qnas_presentes:
                 activos = [
                     r for r in registros
-                    if pd.notna(r["qnas"].get(qna)) and str(r["qnas"].get(qna)).strip() != ""
+                    if self._es_activo(r["qnas"].get(qna))
                 ]
                 entes_activos = sorted({r["ente"] for r in activos})
                 if len(entes_activos) > 1:

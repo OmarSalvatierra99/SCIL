@@ -7,53 +7,28 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <style>
     .rfc-group {
-      background: #f8f9fa;
-      border: 1px solid var(--color-border);
+      background: #ffffff;
+      border: 2px solid var(--color-primary);
       border-radius: 10px;
       margin-bottom: 1.5rem;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.05);
       padding: 1rem 1.25rem;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
     }
     .rfc-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: .5rem;
-    }
-    .rfc-header h3 {
-      margin: 0;
-      color: var(--color-primary);
-    }
-    .rfc-header small {
-      color: var(--color-muted);
-    }
-    .qna-badges {
-      margin-top: .5rem;
-    }
-    .qna-badge {
-      display: inline-block;
-      background: #eaf5ff;
-      color: var(--color-primary);
-      border: 1px solid var(--color-primary);
-      border-radius: 8px;
-      padding: .25rem .6rem;
-      font-size: .85rem;
-      font-weight: 600;
-      margin: .15rem;
-    }
-    .ente-tag {
-      display: inline-block;
-      background: #f1f1f1;
+      background: var(--color-primary);
+      color: white;
+      padding: 0.75rem 1rem;
       border-radius: 6px;
-      padding: 2px 6px;
-      margin-right: 4px;
-      font-size: .8rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 1.1rem;
+      font-weight: bold;
     }
-    .detalle-tabla {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 0.75rem;
-      font-size: 0.88rem;
+    .rfc-header .nombre {
+      font-weight: 700;
+      font-size: 1.2rem;
+      color: #fffbe6;
     }
     .detalle-tabla th, .detalle-tabla td {
       border: 1px solid var(--color-border);
@@ -61,18 +36,15 @@
       text-align: left;
     }
     .detalle-tabla th {
-      background: var(--color-bg);
-      font-weight: 600;
-    }
-    .sin-egreso {
-      color: var(--color-error);
-      font-weight: 600;
+      background: #eaf1ff;
+      color: #1e3a8a;
+      font-weight: 700;
     }
     .chk-solventar {
       width: 18px;
       height: 18px;
       cursor: pointer;
-      accent-color: var(--color-primary, #004aad);
+      accent-color: var(--color-primary);
     }
   </style>
 </head>
@@ -81,12 +53,11 @@
     <div class="nav-container">
       <div class="nav-brand">
         <img src="{{ url_for('static', filename='ofs_logo.png') }}" alt="OFS" style="height:40px;">
-        <div><h1>SCIL</h1><span>Relaciones Laborales — Cruces por Quincena</span></div>
+        <div><h1>SCIL</h1><span>Auditoría Laboral — Cruces por Quincena</span></div>
       </div>
       <div class="nav-links">
         <a href="{{ url_for('dashboard') }}" class="nav-link">Inicio</a>
         <a href="{{ url_for('resultados_patrones') }}" class="nav-link active">Laborales</a>
-        <a href="{{ url_for('resultados_horarios') }}" class="nav-link">Horarios</a>
         <a href="{{ url_for('logout') }}" class="nav-link">Salir</a>
       </div>
     </div>
@@ -96,7 +67,7 @@
     <div class="container">
       <div class="page-header">
         <h2>Resultados de Auditoría Laboral (Modelo QNA)</h2>
-        <p>Trabajadores con cruces entre entes detectados por quincena</p>
+        <p>Trabajadores con cruces detectados entre entes por quincena</p>
       </div>
 
       <div class="search-section">
@@ -105,7 +76,7 @@
           <button onclick="filterResults()" class="btn btn-primary">Buscar</button>
         </div>
         <div class="export-minimal">
-          <a href="/exportar/laboral" class="btn btn-secondary">Exportar no solventadas</a>
+          <a href="/exportar/laboral" class="btn btn-secondary">Exportar Excel</a>
         </div>
       </div>
 
@@ -113,31 +84,26 @@
         {% for rfc, info in resultados_agrupados.items() %}
         <div class="rfc-group">
           <div class="rfc-header">
-            <h3>{{ rfc }}</h3>
-            <small>{{ info.nombre }}</small>
+            <div>{{ rfc }}</div>
+            <div class="nombre">{{ info.nombre }}</div>
           </div>
 
-          <div class="qna-badges">
-            {% for q in info.quincenas %}
-              <span class="qna-badge">Quincena: {{ q }}</span>
-            {% endfor %}
-          </div>
-
-          <div style="margin-top:0.5rem;">
-            <strong style="color:var(--color-primary);">Cruce detectado entre:</strong><br>
+          <div style="margin-top:0.75rem;">
+            <strong style="color:var(--color-primary);">Entes involucrados:</strong>
             {% for e in info.entes %}
               <span class="ente-tag">{{ e }}</span>
             {% endfor %}
           </div>
 
           {% if info.registros %}
-          <table class="detalle-tabla">
+          <table class="detalle-tabla" style="margin-top:0.75rem;width:100%;">
             <thead>
               <tr>
                 <th>Ente</th>
                 <th>Puesto</th>
-                <th>Fecha Ingreso</th>
-                <th>Fecha Egreso</th>
+                <th>Fecha Alta</th>
+                <th>Fecha Baja</th>
+                <th>Monto</th>
                 <th>Solventado</th>
               </tr>
             </thead>
@@ -147,26 +113,16 @@
                 <td>{{ reg.ente }}</td>
                 <td>{{ reg.puesto }}</td>
                 <td>{{ reg.fecha_ingreso or '—' }}</td>
-                <td class="{% if not reg.fecha_egreso %}sin-egreso{% endif %}">
-                  {{ reg.fecha_egreso or 'Sin Egreso' }}
-                </td>
+                <td>{{ reg.fecha_egreso or '—' }}</td>
+                <td>{{ reg.monto or '—' }}</td>
                 <td style="text-align:center;">
-                  {% if reg.solventado %}
-                    <input type="checkbox" class="chk-solventar"
-                      data-rfc="{{ rfc }}"
-                      data-ente="{{ reg.ente }}"
-                      data-puesto="{{ reg.puesto }}"
-                      data-fi="{{ reg.fecha_ingreso }}"
-                      data-fe="{{ reg.fecha_egreso }}"
-                      checked>
-                  {% else %}
-                    <input type="checkbox" class="chk-solventar"
-                      data-rfc="{{ rfc }}"
-                      data-ente="{{ reg.ente }}"
-                      data-puesto="{{ reg.puesto }}"
-                      data-fi="{{ reg.fecha_ingreso }}"
-                      data-fe="{{ reg.fecha_egreso }}">
-                  {% endif %}
+                  <input type="checkbox" class="chk-solventar"
+                    data-rfc="{{ rfc }}"
+                    data-ente="{{ reg.ente }}"
+                    data-puesto="{{ reg.puesto }}"
+                    data-fi="{{ reg.fecha_ingreso }}"
+                    data-fe="{{ reg.fecha_egreso }}"
+                    {% if reg.solventado %}checked{% endif %}>
                 </td>
               </tr>
               {% endfor %}
@@ -192,10 +148,8 @@
       window.location.href = '?' + params.toString();
     }
 
-    // Manejo del check para solventar
     document.addEventListener('change', async (e) => {
       if (!e.target.classList.contains('chk-solventar')) return;
-
       const chk = e.target;
       const payload = {
         rfc: chk.dataset.rfc,
@@ -205,7 +159,6 @@
         fecha_egreso: chk.dataset.fe,
         estado: chk.checked ? 1 : 0
       };
-
       try {
         const res = await fetch('/api/solvencia/toggle', {
           method: 'POST',
@@ -217,7 +170,7 @@
           alert('Error: ' + (data.error || 'no especificado'));
           chk.checked = !chk.checked;
         }
-      } catch (err) {
+      } catch {
         alert('Error de conexión con el servidor');
         chk.checked = !chk.checked;
       }
