@@ -1,6 +1,6 @@
 # ===========================================================
-# app.py — SCIL QNA 2025 / Sistema de Cruce de Información Laboral
-# Versión completa y corregida con endpoints de carga y solvencia
+# app.py — SASP / Sistema de Auditoría de Servicios Personales
+# Versión 2025: estructura base.html + vistas unificadas
 # ===========================================================
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_file
@@ -18,7 +18,7 @@ from datetime import datetime
 # Configuración
 # ---------------------------
 app = Flask(__name__)
-app.secret_key = os.environ.get("SCIL_SECRET", "scil_tlax_2025")
+app.secret_key = os.environ.get("SASP_SECRET", "sasp_tlax_2025")
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
@@ -187,57 +187,22 @@ def resultados_patrones():
                            total=total)
 
 # ===========================================================
-# EXPORTAR LABORAL
-# ===========================================================
-@app.route("/exportar/laboral")
-def exportar_laboral():
-    if not session.get("autenticado"):
-        return redirect(url_for("login"))
-    resultados, _ = db_manager.obtener_resultados_paginados("laboral", pagina=1, limite=999999)
-    entes_usuario = session.get("entes", [])
-    if not _allowed_all(entes_usuario) and entes_usuario:
-        resultados = [r for r in resultados if any(_ente_match(e, entes_usuario) for e in (r.get("entes") or []))]
-
-    filas, vistos = [], set()
-    for r in resultados:
-        rfc, nombre, qna = (r.get("rfc","") or "").upper(), r.get("nombre","") or "", r.get("fecha_comun","") or ""
-        entes = sorted(list({_limpiar_nombre_ente(e) for e in (r.get("entes") or []) if e}))
-        while len(entes) < 2:
-            entes.append("")
-        for reg in r.get("registros", []):
-            fila = [rfc, nombre, qna, entes[0], entes[1],
-                    reg.get("puesto",""), reg.get("fecha_ingreso",""),
-                    reg.get("fecha_egreso",""), reg.get("monto","")]
-            if tuple(fila) not in vistos:
-                vistos.add(tuple(fila))
-                filas.append(fila)
-
-    if not filas:
-        return jsonify({"error": "No hay datos para exportar"}), 404
-
-    wb = Workbook(); ws = wb.active; ws.title = "Laborales"
-    ws.append(["RFC","Nombre","Quincena","Ente 1","Ente 2","Puesto","Fecha Alta","Fecha Baja","Monto"])
-    for f in filas: ws.append(f)
-    for col in ws.columns:
-        width = min(max(len(str(c.value)) if c.value else 0 for c in col) + 2, 50)
-        ws.column_dimensions[col[0].column_letter].width = width
-    out = BytesIO(); wb.save(out); out.seek(0)
-    filename = f"SCIL_Laborales_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-    return send_file(out, as_attachment=True, download_name=filename,
-                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-# ===========================================================
 # RESULTADOS HORARIOS
 # ===========================================================
 @app.route("/resultados_horarios")
 def resultados_horarios():
     if not session.get("autenticado"):
         return redirect(url_for("login"))
-    return render_template("resultados.html", resultados_agrupados={}, busqueda="",
-                           pagina_actual=1, total_paginas=1, total=0)
+    resultados, total = db_manager.obtener_resultados_paginados("horarios", pagina=1, limite=100)
+    return render_template("resultados_horarios.html",
+                           resultados=resultados,
+                           busqueda=request.args.get("search", ""),
+                           pagina_actual=1,
+                           total_paginas=1,
+                           total=total)
 
 # ===========================================================
-# SUBIDA DE ARCHIVOS (Laborales y Horarios)
+# SUBIDA DE ARCHIVOS
 # ===========================================================
 def _save_uploads(field_name="files"):
     files = request.files.getlist(field_name)
@@ -276,44 +241,44 @@ def upload_horarios():
         hp = HorariosProcessor()
         resultados = hp.procesar_archivos(paths)
     except Exception as e:
-        return jsonify({"error": f"No implementado o error en HorariosProcessor: {e}"}), 500
+        return jsonify({"error": f"Error procesando horarios: {e}"}), 500
     nuevos, repetidos, _ = db_manager.comparar_con_historico(resultados, "horarios")
     db_manager.guardar_resultados(nuevos, "horarios", nombre_archivo=os.path.basename(paths[0]) if paths else None)
     return jsonify({"mensaje": "Horarios procesados correctamente",
                     "total_resultados": len(resultados), "nuevos": len(nuevos)})
 
 # ===========================================================
-# API DE SOLVENCIA (checkbox resultados.html)
+# EXPORTAR LABORAL
 # ===========================================================
-@app.route("/api/solvencia/toggle", methods=["POST"])
-def api_solvencia_toggle():
+@app.route("/exportar/laboral")
+def exportar_laboral():
     if not session.get("autenticado"):
-        return jsonify({"ok": False, "error": "No autorizado"}), 403
-    data = request.get_json(force=True, silent=True) or {}
-    rfc = (data.get("rfc") or "").upper()
-    ente = (data.get("ente") or "").upper()
-    puesto = (data.get("puesto") or "").upper()
-    fi, fe = data.get("fecha_ingreso") or "", data.get("fecha_egreso") or ""
-    estado = 1 if data.get("estado") in (1, "1", True, "true", "True") else 0
-    if not rfc or not ente:
-        return jsonify({"ok": False, "error": "Datos incompletos"}), 400
-    key_hash = _row_key(rfc, ente, puesto, fi, fe)
-    usuario = session.get("usuario", "anon")
-    conn = db_manager.get_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO solvencias (key_hash, rfc, ente, puesto, fecha_ingreso, fecha_egreso, estado, usuario)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(key_hash) DO UPDATE SET
-            estado=excluded.estado, usuario=excluded.usuario, ts=CURRENT_TIMESTAMP
-    """, (key_hash, rfc, ente, puesto, fi, fe, estado, usuario))
-    conn.commit()
-    return jsonify({"ok": True, "key_hash": key_hash, "estado": estado})
+        return redirect(url_for("login"))
+    resultados, _ = db_manager.obtener_resultados_paginados("laboral", pagina=1, limite=999999)
+    filas = []
+    for r in resultados:
+        rfc = (r.get("rfc") or "").upper()
+        nombre = r.get("nombre", "")
+        quincena = r.get("fecha_comun", "")
+        for reg in r.get("registros", []):
+            filas.append([
+                rfc, nombre, quincena,
+                reg.get("ente",""), reg.get("puesto",""),
+                reg.get("fecha_ingreso",""), reg.get("fecha_egreso",""),
+                reg.get("monto","")
+            ])
+    wb = Workbook(); ws = wb.active; ws.title = "Laborales"
+    ws.append(["RFC","Nombre","Quincena","Ente","Puesto","Fecha Alta","Fecha Baja","Monto"])
+    for f in filas: ws.append(f)
+    out = BytesIO(); wb.save(out); out.seek(0)
+    filename = f"SASP_Laborales_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return send_file(out, as_attachment=True, download_name=filename,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # ===========================================================
 # MAIN
 # ===========================================================
 if __name__ == "__main__":
-    print("🚀 Iniciando SCIL QNA 2025...")
+    print("🚀 Iniciando SASP 2025...")
     app.run(host="0.0.0.0", port=4050, debug=True)
 

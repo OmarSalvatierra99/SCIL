@@ -1,181 +1,72 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SCIL - Resultados Laborales</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <style>
-    .rfc-group {
-      background: #ffffff;
-      border: 2px solid var(--color-primary);
-      border-radius: 10px;
-      margin-bottom: 1.5rem;
-      padding: 1rem 1.25rem;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-    }
-    .rfc-header {
-      background: var(--color-primary);
-      color: white;
-      padding: 0.75rem 1rem;
-      border-radius: 6px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 1.1rem;
-      font-weight: bold;
-    }
-    .rfc-header .nombre {
-      font-weight: 700;
-      font-size: 1.2rem;
-      color: #fffbe6;
-    }
-    .detalle-tabla th, .detalle-tabla td {
-      border: 1px solid var(--color-border);
-      padding: 0.5rem 0.75rem;
-      text-align: left;
-    }
-    .detalle-tabla th {
-      background: #eaf1ff;
-      color: #1e3a8a;
-      font-weight: 700;
-    }
-    .chk-solventar {
-      width: 18px;
-      height: 18px;
-      cursor: pointer;
-      accent-color: var(--color-primary);
-    }
-  </style>
-</head>
-<body>
-  <nav class="navbar">
-    <div class="nav-container">
-      <div class="nav-brand">
-        <img src="{{ url_for('static', filename='ofs_logo.png') }}" alt="OFS" style="height:40px;">
-        <div><h1>SCIL</h1><span>Auditoría Laboral — Cruces por Quincena</span></div>
-      </div>
-      <div class="nav-links">
-        <a href="{{ url_for('dashboard') }}" class="nav-link">Inicio</a>
-        <a href="{{ url_for('resultados_patrones') }}" class="nav-link active">Laborales</a>
-        <a href="{{ url_for('logout') }}" class="nav-link">Salir</a>
-      </div>
+{% extends "base.html" %}
+{% block title %}SASP - Resultados Laborales{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="page-header">
+    <h2>Resultados de Auditoría Laboral</h2>
+    <p>Trabajadores con cruces detectados entre entes por quincena.</p>
+  </div>
+
+  <div class="search-section">
+    <div class="search-box-minimal">
+      <input type="text" id="searchInput" placeholder="Buscar por RFC o nombre..." value="{{ busqueda }}">
+      <button onclick="filterResults()" class="btn btn-primary">Buscar</button>
     </div>
-  </nav>
+    <div class="export-minimal">
+      <a href="/exportar/laboral" class="btn btn-secondary">Exportar Excel</a>
+    </div>
+  </div>
 
-  <main class="main-content">
-    <div class="container">
-      <div class="page-header">
-        <h2>Resultados de Auditoría Laboral (Modelo QNA)</h2>
-        <p>Trabajadores con cruces detectados entre entes por quincena</p>
-      </div>
-
-      <div class="search-section">
-        <div class="search-box-minimal">
-          <input type="text" id="searchInput" placeholder="Buscar por RFC o nombre..." value="{{ busqueda }}">
-          <button onclick="filterResults()" class="btn btn-primary">Buscar</button>
-        </div>
-        <div class="export-minimal">
-          <a href="/exportar/laboral" class="btn btn-secondary">Exportar Excel</a>
+  {% if resultados_agrupados %}
+    {% for rfc, info in resultados_agrupados.items() %}
+    <div class="result-minimal-card">
+      <div class="result-minimal-header">
+        <div>
+          <h3>{{ rfc }}</h3>
+          <p style="color:var(--color-muted);">{{ info.nombre }}</p>
         </div>
       </div>
 
-      {% if resultados_agrupados %}
-        {% for rfc, info in resultados_agrupados.items() %}
-        <div class="rfc-group">
-          <div class="rfc-header">
-            <div>{{ rfc }}</div>
-            <div class="nombre">{{ info.nombre }}</div>
-          </div>
-
-          <div style="margin-top:0.75rem;">
-            <strong style="color:var(--color-primary);">Entes involucrados:</strong>
-            {% for e in info.entes %}
-              <span class="ente-tag">{{ e }}</span>
-            {% endfor %}
-          </div>
-
-          {% if info.registros %}
-          <table class="detalle-tabla" style="margin-top:0.75rem;width:100%;">
-            <thead>
-              <tr>
-                <th>Ente</th>
-                <th>Puesto</th>
-                <th>Fecha Alta</th>
-                <th>Fecha Baja</th>
-                <th>Monto</th>
-                <th>Solventado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for reg in info.registros %}
-              <tr>
-                <td>{{ reg.ente }}</td>
-                <td>{{ reg.puesto }}</td>
-                <td>{{ reg.fecha_ingreso or '—' }}</td>
-                <td>{{ reg.fecha_egreso or '—' }}</td>
-                <td>{{ reg.monto or '—' }}</td>
-                <td style="text-align:center;">
-                  <input type="checkbox" class="chk-solventar"
-                    data-rfc="{{ rfc }}"
-                    data-ente="{{ reg.ente }}"
-                    data-puesto="{{ reg.puesto }}"
-                    data-fi="{{ reg.fecha_ingreso }}"
-                    data-fe="{{ reg.fecha_egreso }}"
-                    {% if reg.solventado %}checked{% endif %}>
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-          {% endif %}
-        </div>
+      <div>
+        <strong style="color:var(--color-primary);">Entes involucrados:</strong>
+        {% for e in info.entes %}
+          <span class="ente-tag">{{ e }}</span>
         {% endfor %}
-      {% else %}
-        <div class="empty-state-minimal">
-          <div class="empty-icon">📭</div>
-          <h3>No se encontraron resultados</h3>
-        </div>
+      </div>
+
+      {% if info.registros %}
+      <table class="detalle-tabla">
+        <thead>
+          <tr>
+            <th>Ente</th>
+            <th>Puesto</th>
+            <th>Fecha Alta</th>
+            <th>Fecha Baja</th>
+            <th>Monto</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for reg in info.registros %}
+          <tr>
+            <td>{{ reg.ente }}</td>
+            <td>{{ reg.puesto }}</td>
+            <td>{{ reg.fecha_ingreso or '—' }}</td>
+            <td>{{ reg.fecha_egreso or '—' }}</td>
+            <td>{{ reg.monto or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
       {% endif %}
     </div>
-  </main>
-
-  <script>
-    function filterResults() {
-      const search = document.getElementById('searchInput').value;
-      const params = new URLSearchParams();
-      if (search) params.set('search', search);
-      window.location.href = '?' + params.toString();
-    }
-
-    document.addEventListener('change', async (e) => {
-      if (!e.target.classList.contains('chk-solventar')) return;
-      const chk = e.target;
-      const payload = {
-        rfc: chk.dataset.rfc,
-        ente: chk.dataset.ente,
-        puesto: chk.dataset.puesto,
-        fecha_ingreso: chk.dataset.fi,
-        fecha_egreso: chk.dataset.fe,
-        estado: chk.checked ? 1 : 0
-      };
-      try {
-        const res = await fetch('/api/solvencia/toggle', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        if (!data.ok) {
-          alert('Error: ' + (data.error || 'no especificado'));
-          chk.checked = !chk.checked;
-        }
-      } catch {
-        alert('Error de conexión con el servidor');
-        chk.checked = !chk.checked;
-      }
-    });
-  </script>
-</body>
-</html>
+    {% endfor %}
+  {% else %}
+    <div class="empty-state-minimal">
+      <div class="empty-icon">📭</div>
+      <h3>No se encontraron resultados</h3>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
 
