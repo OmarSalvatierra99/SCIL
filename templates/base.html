@@ -1,26 +1,35 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}Sistema de Auditoría de Servicios Personales{% endblock %}</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}SASP - Sistema de Auditoría de Servicios Personales{% endblock %}</title>
+
+  <!-- CSS principal -->
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  {% block extra_head %}{% endblock %}
+
+  <!-- Ícono de pestaña (opcional) -->
+  <link rel="icon" href="{{ url_for('static', filename='ofs_logo.png') }}" type="image/png">
+
+  <!-- JS principal diferido -->
+  <script defer src="{{ url_for('static', filename='main.js') }}"></script>
 </head>
 <body>
   <nav class="navbar">
     <div class="nav-container">
       <div class="nav-brand">
-        <img src="{{ url_for('static', filename='ofs_logo.png') }}" alt="OFS" style="height:40px;">
+        <img src="{{ url_for('static', filename='ofs_logo.png') }}" alt="SASP">
         <div>
           <h1>SASP</h1>
-          <span>Órgano de Fiscalización Superior del Estado de Tlaxcala</span>
+          <span>Órgano de Fiscalización Superior de Tlaxcala</span>
         </div>
       </div>
+
       <div class="nav-links">
-        <a href="{{ url_for('dashboard') }}" class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">Inicio</a>
-        <a href="{{ url_for('resultados_patrones') }}" class="nav-link {% if request.endpoint == 'resultados_patrones' %}active{% endif %}">Laborales</a>
-        <a href="{{ url_for('resultados_horarios') }}" class="nav-link {% if request.endpoint == 'resultados_horarios' %}active{% endif %}">Horarios</a>
+        <a href="{{ url_for('dashboard') }}" 
+           class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">Inicio</a>
+        <a href="{{ url_for('resultados_generales') }}" 
+           class="nav-link {% if request.endpoint == 'resultados_generales' %}active{% endif %}">Laborales</a>
         <a href="{{ url_for('logout') }}" class="nav-link">Salir</a>
       </div>
     </div>
@@ -29,9 +38,6 @@
   <main class="main-content">
     {% block content %}{% endblock %}
   </main>
-
-  <script src="{{ url_for('static', filename='main.js') }}"></script>
-  {% block extra_js %}{% endblock %}
 </body>
 </html>
 

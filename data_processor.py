@@ -1,12 +1,12 @@
-# =========================================================
-# data_processor.py — SCIL / Auditoría Laboral por Quincenas (QNA)
-# Versión 2025 — Detección de cruces entre entes por quincenas no vacías (multiarchivo)
-# =========================================================
+# ===========================================================
+# data_processor.py — SCIL QNA 2025 / Auditoría Laboral por Quincenas
+# Versión optimizada: análisis en memoria, encabezados estándar
+# ===========================================================
 
 import pandas as pd
-from collections import defaultdict
 import re
 from datetime import datetime, date
+from collections import defaultdict
 
 
 class DataProcessor:
@@ -19,9 +19,8 @@ class DataProcessor:
     def limpiar_rfc(self, rfc):
         if pd.isna(rfc):
             return None
-        rfc_s = str(rfc).strip().upper()
-        rfc_s = re.sub(r"[^A-Z0-9]", "", rfc_s)
-        return rfc_s if 10 <= len(rfc_s) <= 13 else None
+        s = re.sub(r"[^A-Z0-9]", "", str(rfc).strip().upper())
+        return s if 10 <= len(s) <= 13 else None
 
     def limpiar_fecha(self, fecha):
         if pd.isna(fecha):
@@ -29,112 +28,99 @@ class DataProcessor:
         if isinstance(fecha, (datetime, date)):
             return fecha.strftime("%Y-%m-%d")
         s = str(fecha).strip()
-        if not s or s.lower() in ["nan", "nat", "none", "null"]:
+        if s.lower() in {"", "nan", "nat", "none", "null"}:
             return None
-        try:
-            f = pd.to_datetime(s, errors="coerce", dayfirst=False)
-            return f.strftime("%Y-%m-%d") if not pd.isna(f) else None
-        except Exception:
-            return None
+        f = pd.to_datetime(s, errors="coerce", dayfirst=False)
+        return f.strftime("%Y-%m-%d") if not pd.isna(f) else None
 
     # ----------------------------------------------------
-    # DETECCIÓN DE COLUMNAS
+    # PROCESAMIENTO PRINCIPAL
     # ----------------------------------------------------
-    def detectar_columnas(self, df):
-        cols = df.columns.astype(str)
-        rfc_col = next((c for c in cols if "RFC" in c.upper()), None)
-        nombre_col = next((c for c in cols if "NOMBRE" in c.upper()), None)
-        puesto_col = next((c for c in cols if "PUESTO" in c.upper()), None)
-        f_ing = next((c for c in cols if "FECHA_INGRESO" in c.upper()), None)
-        f_egr = next((c for c in cols if "FECHA_EGRESO" in c.upper()), None)
-        qnas = [c for c in cols if c.upper().startswith("QNA")]
-        return rfc_col, nombre_col, puesto_col, f_ing, f_egr, qnas
-
-    # ----------------------------------------------------
-    # PROCESAMIENTO PRINCIPAL (MULTIARCHIVO)
-    # ----------------------------------------------------
-    def procesar_archivos(self, filepaths):
-        print("📊 Procesando varios archivos laborales por quincenas...")
+    def procesar_archivos(self, fileobjs, from_memory=False):
+        """
+        Procesa uno o varios archivos Excel directamente desde memoria (BytesIO).
+        Cada hoja representa un ENTE. 
+        Analiza columnas RFC, NOMBRE, PUESTO, FECHA_ALTA, FECHA_BAJA, QNA1–QNA12, TOT_NETO.
+        """
+        print("📊 Procesando archivos laborales...")
         entes_rfc = defaultdict(list)
 
-        for filepath in filepaths:
-            xl = pd.ExcelFile(filepath)
-            nombre_archivo = filepath.split("/")[-1]
-            print(f"🔹 Analizando archivo: {nombre_archivo}")
+        for f in fileobjs:
+            nombre_archivo = getattr(f, "name", "archivo_memoria.xlsx")
+            print(f"🔹 Analizando {nombre_archivo}")
+
+            xl = pd.ExcelFile(f)
 
             for sheet in xl.sheet_names:
-                df = xl.parse(sheet)
-                df.columns = df.columns.str.strip().str.upper().str.replace(" ", "_")
-                rfc_col, nombre_col, puesto_col, f_ing, f_egr, qnas = self.detectar_columnas(df)
+                ente_label = sheet.strip().upper()  # El nombre de la hoja es el ENTE
+                df = xl.parse(sheet).rename(columns=lambda x: str(x).strip().upper().replace(" ", "_"))
 
-                if not rfc_col or not qnas:
-                    print(f"⚠️  Hoja omitida: {sheet} — columnas insuficientes ({list(df.columns)})")
+                columnas_necesarias = {"RFC", "NOMBRE", "PUESTO", "FECHA_ALTA", "FECHA_BAJA"}
+                if not columnas_necesarias.issubset(df.columns):
+                    print(f"⚠️  Hoja {ente_label} omitida (faltan columnas base).")
                     continue
 
-                ente_label = f"{nombre_archivo}_{sheet}"
-                registros_validos = 0
+                # Solo tomar QNA1–QNA12 (ignorar QNA12E u otras)
+                qnas = [c for c in df.columns if re.match(r"^QNA([1-9]|1[0-2])$", c)]
+                if not qnas:
+                    print(f"⚠️  Hoja {ente_label} sin quincenas válidas.")
+                    continue
 
+                validos = 0
                 for _, row in df.iterrows():
-                    rfc = self.limpiar_rfc(row.get(rfc_col))
+                    rfc = self.limpiar_rfc(row.get("RFC"))
                     if not rfc:
                         continue
-                    registro = {
-                        "ente": ente_label,
-                        "nombre": str(row.get(nombre_col, "")).strip(),
-                        "puesto": str(row.get(puesto_col, "")).strip(),
-                        "fecha_ingreso": self.limpiar_fecha(row.get(f_ing)) if f_ing else None,
-                        "fecha_egreso": self.limpiar_fecha(row.get(f_egr)) if f_egr else None,
-                        "qnas": {q: row.get(q) for q in qnas},
-                    }
-                    entes_rfc[rfc].append(registro)
-                    registros_validos += 1
 
-                print(f"   → {sheet}: {registros_validos} registros válidos")
+                    entes_rfc[rfc].append({
+                        "ente": ente_label,
+                        "nombre": str(row.get("NOMBRE", "")).strip(),
+                        "puesto": str(row.get("PUESTO", "")).strip(),
+                        "fecha_ingreso": self.limpiar_fecha(row.get("FECHA_ALTA")),
+                        "fecha_egreso": self.limpiar_fecha(row.get("FECHA_BAJA")),
+                        "qnas": {q: row.get(q) for q in qnas},
+                        "monto": row.get("TOT_NETO"),
+                    })
+                    validos += 1
+
+                print(f"   → {ente_label}: {validos} registros válidos")
 
         resultados = self._cruces_quincenales(entes_rfc)
-        print(f"📈 {len(resultados)} hallazgos laborales generados (modelo QNA).")
+        print(f"📈 {len(resultados)} cruces detectados.")
         return resultados
-
-    # ----------------------------------------------------
-    # FUNCIÓN DE APOYO: VALIDACIÓN DE ACTIVIDAD EN QNA
-    # ----------------------------------------------------
-    def _es_activo(self, valor):
-        if pd.isna(valor):
-            return False
-        s = str(valor).strip().upper()
-        return s not in {"", "0", "0.0", "NO", "N/A", "NA", "NONE"}
 
     # ----------------------------------------------------
     # REGLAS AUDITORAS — CRUCES ENTRE ENTES POR QNA
     # ----------------------------------------------------
+    def _es_activo(self, v):
+        if pd.isna(v):
+            return False
+        s = str(v).strip().upper()
+        return s not in {"", "0", "0.0", "NO", "N/A", "NA", "NONE"}
+
     def _cruces_quincenales(self, entes_rfc):
         hallazgos = []
         for rfc, registros in entes_rfc.items():
             if len(registros) < 2:
                 continue
 
-            # Detectar quincenas con valor no vacío o no nulo
-            qnas_presentes = sorted(
-                {q for r in registros for q, v in r["qnas"].items() if self._es_activo(v)}
-            )
+            # Detectar quincenas activas entre entes
+            qnas_presentes = sorted({q for r in registros for q, v in r["qnas"].items() if self._es_activo(v)})
             if not qnas_presentes:
                 continue
 
             for qna in qnas_presentes:
-                activos = [
-                    r for r in registros
-                    if self._es_activo(r["qnas"].get(qna))
-                ]
+                activos = [r for r in registros if self._es_activo(r["qnas"].get(qna))]
                 entes_activos = sorted({r["ente"] for r in activos})
                 if len(entes_activos) > 1:
                     hallazgos.append({
                         "rfc": rfc,
                         "nombre": activos[0].get("nombre", ""),
-                        "registros": activos,
                         "entes": entes_activos,
                         "fecha_comun": qna,
                         "tipo_patron": "CRUCE_ENTRE_ENTES_QNA",
-                        "descripcion": f"El trabajador tiene datos en la quincena {qna} en más de un ente."
+                        "descripcion": f"El trabajador tiene registros activos en la quincena {qna} en más de un ente.",
+                        "registros": activos
                     })
         return hallazgos
 

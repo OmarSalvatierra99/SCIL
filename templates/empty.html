@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}SASP - Sin Resultados{% endblock %}
+
+{% block content %}
+<div class="container empty-view">
+
+  <section class="empty-state">
+    <div class="empty-icon">ℹ️</div>
+    <h2>{{ mensaje or "No hay información disponible" }}</h2>
+    <p class="subtitle">
+      No se encontraron resultados para la búsqueda o el análisis solicitado.<br>
+      Puede volver a la vista general o al panel principal.
+    </p>
+
+    <div class="empty-actions">
+      <a href="{{ url_for('resultados_generales') }}" class="btn btn-secondary">Volver a Resultados</a>
+      <a href="{{ url_for('dashboard') }}" class="btn btn-primary">Ir al Panel</a>
+    </div>
+  </section>
+
+</div>
+{% endblock %}
+

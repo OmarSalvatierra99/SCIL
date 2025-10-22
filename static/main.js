@@ -1,72 +1,97 @@
-// Archivo principal de scripts compartidos para SASP
-
-function uploadHandler(formId, uploadUrl, resultDivId, redirectUrl) {
-  const form = document.getElementById(formId);
-  const input = form.querySelector("input[type=file]");
-  const progress = form.querySelector(".upload-progress");
-  const content = form.querySelector(".upload-content");
-  const resultDiv = document.getElementById(resultDivId);
-
-  form.addEventListener("click", (e) => {
-    if (e.target.tagName.toLowerCase() === "input") return;
-    input.click();
-  });
-
-  input.addEventListener("change", () => {
-    const files = input.files;
-    if (!files.length) {
-      alert("Selecciona al menos un archivo Excel (.xlsx)");
-      return;
-    }
-
-    progress.style.display = "block";
-    content.style.display = "none";
-
-    const formData = new FormData();
-    for (let file of files) formData.append("files", file);
-
-    fetch(uploadUrl, { method: "POST", body: formData })
-      .then(res => res.json())
-      .then(data => {
-        progress.style.display = "none";
-        content.style.display = "block";
-        resultDiv.style.display = "block";
-
-        if (data.error) {
-          resultDiv.innerHTML = `<div class="alert-error">${data.error}</div>`;
-        } else {
-          resultDiv.innerHTML = `
-            <div class="result-minimal-card">
-              <h3>✅ ${data.mensaje}</h3>
-              <div class="result-minimal-stats">
-                <span class="stat">${data.total_resultados || 0} resultados</span>
-                <span class="stat">${data.nuevos || 0} nuevos</span>
-              </div>
-              <a href="${redirectUrl}" class="btn btn-primary">Ver resultados</a>
-            </div>`;
-        }
-      })
-      .catch(err => {
-        progress.style.display = "none";
-        content.style.display = "block";
-        resultDiv.innerHTML = `<div class="alert-error">Error: ${err}</div>`;
-      });
-  });
-}
-
-function filterResults() {
-  const search = document.getElementById('searchInput');
-  if (!search) return;
-  const params = new URLSearchParams();
-  if (search.value) params.set('search', search.value);
-  window.location.href = '?' + params.toString();
-}
+// ===========================================================
+// SASP - Sistema de Auditoría de Servicios Personales
+// Script principal: manejo de carga de archivos y feedback UI
+// ===========================================================
 
 document.addEventListener("DOMContentLoaded", () => {
-  if (document.getElementById("formLaboral"))
-    uploadHandler("formLaboral", "/upload", "resultLaboral", "/resultados");
+  const form = document.getElementById("uploadForm");
+  if (!form) return;
 
-  if (document.getElementById("formHorarios"))
-    uploadHandler("formHorarios", "/upload_horarios", "resultHorarios", "/resultados_horarios");
+  const input = form.querySelector("#fileInput");
+  const uploadArea = document.getElementById("uploadArea");
+  const progressContainer = document.createElement("div");
+  progressContainer.className = "upload-progress";
+  progressContainer.innerHTML = `
+    <div class="spinner"></div>
+    <p>Procesando archivos, por favor espere...</p>
+  `;
+  uploadArea.after(progressContainer);
+  progressContainer.style.display = "none";
+
+  // === Eventos Drag & Drop ===
+  uploadArea.addEventListener("click", () => input.click());
+  uploadArea.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    uploadArea.style.borderColor = "var(--color-accent)";
+    uploadArea.style.background = "rgba(37,99,235,0.05)";
+  });
+  uploadArea.addEventListener("dragleave", () => {
+    uploadArea.style.borderColor = "var(--color-border)";
+    uploadArea.style.background = "var(--color-bg)";
+  });
+  uploadArea.addEventListener("drop", (e) => {
+    e.preventDefault();
+    uploadArea.style.borderColor = "var(--color-border)";
+    uploadArea.style.background = "var(--color-bg)";
+    input.files = e.dataTransfer.files;
+    handleUpload(input.files);
+  });
+
+  // === Evento al seleccionar archivos manualmente ===
+  input.addEventListener("change", () => handleUpload(input.files));
+
+  // === Función principal de carga ===
+  function handleUpload(files) {
+    if (!files.length) return showMessage("Selecciona al menos un archivo Excel válido (.xlsx o .xls)", true);
+
+    const formData = new FormData();
+    for (const file of files) {
+      if (!/\.(xlsx|xls)$/i.test(file.name)) {
+        showMessage(`Archivo no válido: ${file.name}`, true);
+        return;
+      }
+      formData.append("files", file);
+    }
+
+    // Mostrar progreso
+    progressContainer.style.display = "block";
+    uploadArea.style.display = "none";
+
+    fetch(form.action, { method: "POST", body: formData })
+      .then((res) => res.json())
+      .then((data) => {
+        progressContainer.style.display = "none";
+        uploadArea.style.display = "block";
+
+        if (data.error) return showMessage(data.error, true);
+
+        showMessage(
+          `
+          <h3>✅ ${data.mensaje || "Archivos procesados correctamente"}</h3>
+          <p><strong>${data.total_resultados || 0}</strong> resultados, 
+             <strong>${data.nuevos || 0}</strong> nuevos registros.</p>
+          <a href="/resultados" class="btn btn-primary" style="margin-top:1rem;">Ver resultados</a>
+          `,
+          false
+        );
+      })
+      .catch((err) => {
+        progressContainer.style.display = "none";
+        uploadArea.style.display = "block";
+        showMessage("Error al procesar los archivos: " + err, true);
+      });
+  }
+
+  // === Mensajes visuales elegantes ===
+  function showMessage(message, isError = false) {
+    let msgBox = document.querySelector(".upload-message");
+    if (!msgBox) {
+      msgBox = document.createElement("div");
+      msgBox.className = "upload-message";
+      form.after(msgBox);
+    }
+    msgBox.className = `upload-message ${isError ? "error" : "success"}`;
+    msgBox.innerHTML = message;
+  }
 });
 

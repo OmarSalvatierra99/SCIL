@@ -1,6 +1,6 @@
 # ===========================================================
 # init_users.py — SCIL QNA 2025 / Inicializador de usuarios
-# Crea usuarios con contraseñas seguras y asignación de entes
+# Crea usuarios con contraseñas simples (solo para pruebas)
 # ===========================================================
 
 import sqlite3
@@ -16,10 +16,20 @@ def run():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
-    # Borrar usuarios anteriores
+    # Asegurar existencia de tabla usuarios
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS usuarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL,
+            usuario TEXT UNIQUE NOT NULL,
+            clave TEXT NOT NULL,
+            entes TEXT NOT NULL
+        )
+    """)
+
+    # Borrar usuarios anteriores sin afectar otras tablas
     cur.execute("DELETE FROM usuarios")
 
-    # Lista de entes completos (todos los que aparecen en tu base)
     TODOS_LOS_ENTES = (
         "CORACYT,SESAET,SI,OMG,ICATLAX,CEDH,SOTYV,TCYA,SEPE,SMYT,PROPAET,"
         "CGPI,SIA,COLTLAX,UPT,ITEA,UTT,CECYTE,ITST,USET,UPTREP,CONALEP,UIT,"
@@ -32,42 +42,41 @@ def run():
         {
             "nombre": "C.P.C. Juan José Blanco Sánchez",
             "usuario": "juan",
-            "clave": "JBlanco#2025!",
+            "clave": "juan2025",
             "entes": "CORACYT,SESAET,SI,OMG,ICATLAX,CEDH,SOTYV,TCYA,SEPE,SMYT,PROPAET,CGPI,SIA"
         },
         {
             "nombre": "C.P. Cristina Rosas de la Cruz",
             "usuario": "cristina",
-            "clave": "CRosas$2025!",
+            "clave": "cristina2025",
             "entes": "COLTLAX,UPT,ITEA,UTT,CECYTE,ITST,USET,UPTREP,CONALEP,UIT,COBAT,ITAES"
         },
         {
             "nombre": "C.P. Miguel Ángel Roldán Peña",
             "usuario": "miguel",
-            "clave": "MRoldan@2025!",
+            "clave": "miguel2025",
             "entes": "COESPO,ITJ,PCET,FOMTLAX,IDET,CEAS,FIDECIX,ITIFE,CEAVIT,IDC,AGHET,OPD,SF,CRI-ESCUELA"
         },
         {
             "nombre": "Téc. Ángel Flores Licona",
             "usuario": "angel",
-            "clave": "AFlores*2025!",
+            "clave": "angel2025",
             "entes": "SEDIF,TJA,TET,ITE,UAT,IAIP,FGJET,PJ,PL,SMET,SESESP,CCOM,SCC,SB"
         },
         {
-            "nombre": "C.P. Odilia Hernández García",
+            "nombre": "C.P. Odilia Cuamatzi Bautista",
             "usuario": "odilia",
-            "clave": "Odilia@2025#Cont",
+            "clave": "odilia2025",
             "entes": TODOS_LOS_ENTES
         },
         {
             "nombre": "C.P. Víctor Manuel Torres Ramírez",
             "usuario": "victor",
-            "clave": "Victor#2025@Cont",
+            "clave": "victor2025",
             "entes": TODOS_LOS_ENTES
         }
     ]
 
-    # Insertar usuarios
     for u in usuarios:
         clave_hash = hash_password(u["clave"])
         cur.execute("""
@@ -82,7 +91,7 @@ def run():
     for u in usuarios:
         print(f"  • {u['usuario']} ({u['nombre']})")
         print(f"    Clave: {u['clave']}")
-        print(f"    Entes: {u['entes']}\n")
+        print(f"    Entes: {u['entes'][:70]}...\n")
 
 if __name__ == "__main__":
     run()

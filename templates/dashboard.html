@@ -1,50 +1,49 @@
 {% extends "base.html" %}
-{% block title %}SASP - Panel Principal{% endblock %}
+{% block title %}SASP - Panel de Control{% endblock %}
 
 {% block content %}
-<div class="container">
-  <div class="page-header">
-    <h2>Panel de Auditoría</h2>
-    <p>Analiza cruces laborales y horarios docentes.</p>
-  </div>
+<div class="container dashboard">
+
+  <header class="page-header">
+    <h2>Bienvenido(a), {{ nombre }}</h2>
+    <p class="subtitle">
+      Cargue uno o varios archivos laborales para su análisis.<br>
+      El sistema identificará automáticamente los cruces de personal por RFC y quincena.
+    </p>
+  </header>
 
   <section class="upload-section">
-    <h3>🔍 Auditoría Laboral (Cruces por Quincena)</h3>
-    <div class="upload-card">
-      <form id="formLaboral" enctype="multipart/form-data" class="upload-area">
-        <input type="file" id="fileLaboral" name="files" accept=".xlsx" class="file-input" multiple required>
-        <div class="upload-content">
-          <div class="upload-icon">📁</div>
-          <h3>Subir archivos Excel</h3>
-          <p>Archivos QNA1–QNA12 o equivalentes.</p>
+    <form id="uploadForm" method="POST" enctype="multipart/form-data" action="{{ url_for('upload_laboral') }}">
+      <div class="upload-area" id="uploadArea">
+        <div class="upload-icon">📁</div>
+        <div class="upload-text">
+          <h3>Arrastre o seleccione sus archivos Excel</h3>
+          <p>Formatos permitidos: <strong>XLSX / XLS</strong></p>
         </div>
-        <div class="upload-progress" style="display:none;">
-          <div class="progress-spinner"></div>
-          <p>Procesando...</p>
-        </div>
-      </form>
+        <input type="file" id="fileInput" name="files" multiple accept=".xlsx,.xls" hidden>
+      </div>
+      <div class="upload-footer">
+        <button type="submit" class="btn btn-primary">Procesar Archivos</button>
+      </div>
+    </form>
+
+    <div id="uploadStatus" class="upload-status" style="display:none;">
+      <div class="spinner"></div>
+      <p>Procesando archivos, por favor espere...</p>
     </div>
-    <div id="resultLaboral" class="results-minimal" style="display:none;"></div>
+
+    <div id="uploadResult" class="upload-result" style="display:none;">
+      <h4>Resultado del análisis</h4>
+      <p id="resultMessage"></p>
+    </div>
   </section>
 
-  <section class="upload-section">
-    <h3>⏰ Cruce de Horarios Docentes</h3>
-    <div class="upload-card">
-      <form id="formHorarios" enctype="multipart/form-data" class="upload-area">
-        <input type="file" id="fileHorarios" name="files" accept=".xlsx" class="file-input" multiple required>
-        <div class="upload-content">
-          <div class="upload-icon">🕓</div>
-          <h3>Subir archivos Excel</h3>
-          <p>Plantillas de horarios docentes.</p>
-        </div>
-        <div class="upload-progress" style="display:none;">
-          <div class="progress-spinner"></div>
-          <p>Procesando...</p>
-        </div>
-      </form>
-    </div>
-    <div id="resultHorarios" class="results-minimal" style="display:none;"></div>
+  <section class="results-minimal">
+    <a href="{{ url_for('resultados_generales') }}" class="btn btn-secondary">
+      Ver Resultados Laborales
+    </a>
   </section>
+
 </div>
 {% endblock %}
 

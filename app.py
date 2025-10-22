@@ -1,58 +1,50 @@
 # ===========================================================
-# app.py — SASP / Sistema de Auditoría de Servicios Personales
-# Versión 2025: estructura base.html + vistas unificadas
+# app.py — SCIL QNA 2025 / Sistema de Auditoría de Servicios Personales
+# Versión optimizada — procesamiento en memoria
 # ===========================================================
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_file
 from werkzeug.utils import secure_filename
 from database import DatabaseManager
 from data_processor import DataProcessor
-from horarios_processor import HorariosProcessor
-import os, re, hashlib
-from math import ceil
-from openpyxl import Workbook
 from io import BytesIO
+from openpyxl import Workbook
 from datetime import datetime
+from math import ceil
+import os, re, hashlib
 
-# ---------------------------
-# Configuración
-# ---------------------------
+# ===========================================================
+# CONFIGURACIÓN
+# ===========================================================
 app = Flask(__name__)
-app.secret_key = os.environ.get("SASP_SECRET", "sasp_tlax_2025")
-UPLOAD_FOLDER = "uploads"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.secret_key = os.environ.get("SCIL_SECRET", "scil_tlax_2025")
 
 db_manager = DatabaseManager()
 
-# ---------------------------
-# Utilidades
-# ---------------------------
+# ===========================================================
+# UTILIDADES
+# ===========================================================
 def _sanitize_text(s: str) -> str:
     if not s:
         return ""
     s = s.upper()
-    s = re.sub(r"\s+", "", s)
-    s = s.replace("-", "").replace("_", "")
-    s = s.replace(".", "").replace(",", "")
+    s = re.sub(r"[\s._-]+", "", s)
     s = s.replace("Á","A").replace("É","E").replace("Í","I").replace("Ó","O").replace("Ú","U").replace("Ñ","N")
     return s
 
 def _ente_match(ente_str: str, allowed_tokens):
+    """Determina si un ente pertenece a la lista de entes autorizados."""
     if not allowed_tokens:
         return False
     ent = _sanitize_text(ente_str)
     for tok in allowed_tokens:
-        t = _sanitize_text(tok)
-        if t and t in ent:
+        if _sanitize_text(tok) in ent:
             return True
     return False
 
 def _allowed_all(allowed_tokens):
-    return any(_sanitize_text(x) in {"ALL", "TODOS"} for x in (allowed_tokens or []))
-
-def _row_key(rfc, ente, puesto, fi, fe):
-    base = f"{(rfc or '').upper()}|{(ente or '').upper()}|{(puesto or '').upper()}|{fi or ''}|{fe or ''}"
-    return hashlib.sha256(base.encode("utf-8")).hexdigest()
+    """Detecta si el usuario tiene acceso a todos los entes."""
+    return any(_sanitize_text(x) in {"ALL", "TODOS", "*"} for x in (allowed_tokens or []))
 
 def _limpiar_nombre_ente(ente: str) -> str:
     if not ente:
@@ -63,37 +55,6 @@ def _limpiar_nombre_ente(ente: str) -> str:
             return p.upper()
     return ente.upper()
 
-def _ensure_solvencias_table():
-    conn = db_manager.get_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS solvencias (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            key_hash TEXT UNIQUE,
-            rfc TEXT,
-            ente TEXT,
-            puesto TEXT,
-            fecha_ingreso TEXT,
-            fecha_egreso TEXT,
-            monto TEXT,
-            estado INTEGER DEFAULT 0,
-            usuario TEXT,
-            ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    conn.commit()
-
-def _get_solvencia_map(keys):
-    if not keys:
-        return {}
-    conn = db_manager.get_connection()
-    cur = conn.cursor()
-    q = ",".join(["?"] * len(keys))
-    cur.execute(f"SELECT key_hash, estado FROM solvencias WHERE key_hash IN ({q})", tuple(keys))
-    return {row["key_hash"]: row["estado"] for row in cur.fetchall()}
-
-_ensure_solvencias_table()
-
 # ===========================================================
 # LOGIN / LOGOUT / DASHBOARD
 # ===========================================================
@@ -103,6 +64,7 @@ def login():
         usuario = request.form.get("usuario")
         clave = request.form.get("clave")
         datos = db_manager.get_usuario(usuario, clave)
+
         if datos:
             session["autenticado"] = True
             session["usuario"] = usuario
@@ -111,6 +73,7 @@ def login():
             return redirect(url_for("dashboard"))
         else:
             return render_template("login.html", error="Usuario o clave incorrectos")
+
     return render_template("login.html")
 
 @app.route("/logout")
@@ -122,163 +85,233 @@ def logout():
 def dashboard():
     if not session.get("autenticado"):
         return redirect(url_for("login"))
-    return render_template("dashboard.html", nombre=session.get("nombre",""))
+    return render_template("dashboard.html", nombre=session.get("nombre", ""))
+
+# ===========================================================
+# SUBIDA DE ARCHIVOS LABORALES (EN MEMORIA)
+# ===========================================================
+def _get_uploaded_buffers(field_name="files"):
+    files = request.files.getlist(field_name)
+    if not files:
+        return [], "No se recibieron archivos"
+    buffers = []
+    for f in files:
+        if not f.filename.strip():
+            continue
+        data = BytesIO(f.read())
+        data.name = secure_filename(f.filename)
+        buffers.append(data)
+    if not buffers:
+        return [], "No se recibieron archivos válidos (.xlsx)"
+    return buffers, None
+
+@app.route("/upload_laboral", methods=["POST"])
+def upload_laboral():
+    if not session.get("autenticado"):
+        return jsonify({"error": "No autorizado"}), 403
+
+    buffers, err = _get_uploaded_buffers("files")
+    if err:
+        return jsonify({"error": err}), 400
+
+    processor = DataProcessor()
+    resultados = processor.procesar_archivos(buffers, from_memory=True)
+
+    nuevos, repetidos, _ = db_manager.comparar_con_historico(resultados, "laboral")
+    db_manager.guardar_resultados(nuevos, "laboral")
+
+    return jsonify({
+        "mensaje": "Archivos procesados correctamente",
+        "total_resultados": len(resultados),
+        "nuevos": len(nuevos)
+    })
 
 # ===========================================================
 # RESULTADOS LABORALES
 # ===========================================================
 @app.route("/resultados")
-def resultados_patrones():
+def resultados_generales():
     if not session.get("autenticado"):
         return redirect(url_for("login"))
 
     pagina = int(request.args.get("page", 1))
     busqueda = request.args.get("search", "").strip() or None
-    limite = 20
+    limite = 25
 
     resultados, total = db_manager.obtener_resultados_paginados("laboral", busqueda, pagina, limite)
     entes_usuario = session.get("entes", [])
 
-    if not _allowed_all(entes_usuario) and entes_usuario:
-        resultados = [r for r in resultados if any(_ente_match(e, entes_usuario) for e in (r.get("entes") or []))]
-
-    agrupados, row_keys = {}, set()
+    agrupados = {}
     for r in resultados:
         rfc = r.get("rfc")
         if not rfc:
             continue
         if rfc not in agrupados:
-            agrupados[rfc] = {"nombre": r.get("nombre", ""), "quincenas": set(), "entes": set(), "registros": []}
-        if r.get("fecha_comun"):
-            agrupados[rfc]["quincenas"].add(r["fecha_comun"])
-        for e in r.get("entes", []) or []:
-            agrupados[rfc]["entes"].add(_limpiar_nombre_ente(e))
-        for reg in r.get("registros", []) or []:
-            e = _limpiar_nombre_ente(reg.get("ente",""))
-            p = (reg.get("puesto","") or "").strip()
-            fi, fe = (reg.get("fecha_ingreso","") or "").strip(), (reg.get("fecha_egreso","") or "").strip()
-            monto = str(reg.get("monto","") or "")
-            k = (rfc, e.upper(), p.upper(), fi, fe)
-            if k not in row_keys:
-                row_keys.add(k)
-                agrupados[rfc]["registros"].append({
-                    "ente": e, "puesto": p,
-                    "fecha_ingreso": fi, "fecha_egreso": fe, "monto": monto
-                })
+            agrupados[rfc] = {"nombre": r.get("nombre", ""), "entes": set(), "registros": []}
 
-    all_keys = [_row_key(rfc, reg["ente"], reg["puesto"], reg["fecha_ingreso"], reg["fecha_egreso"])
-                for rfc, info in agrupados.items() for reg in info["registros"]]
-    solv_map = _get_solvencia_map(all_keys)
+        for e in r.get("entes", []):
+            agrupados[rfc]["entes"].add(e)
 
-    for rfc, info in agrupados.items():
-        info["quincenas"] = sorted(info["quincenas"])
-        info["entes"] = sorted(info["entes"])
-        for reg in info["registros"]:
-            k = _row_key(rfc, reg["ente"], reg["puesto"], reg["fecha_ingreso"], reg["fecha_egreso"])
-            reg["solventado"] = 1 if solv_map.get(k, 0) == 1 else 0
-            reg["key_hash"] = k
+        for reg in r.get("registros", []):
+            agrupados[rfc]["registros"].append(reg)
+
+    # Filtra por entes del usuario si aplica
+    if entes_usuario and not _allowed_all(entes_usuario):
+        agrupados = {
+            rfc: data for rfc, data in agrupados.items()
+            if any(_ente_match(e, entes_usuario) for e in data["entes"])
+        }
+
+    # Ordena los resultados por prioridad (ente autorizado del usuario)
+    def prioridad_ente(ente):
+        if not entes_usuario:
+            return 999
+        for i, e in enumerate(entes_usuario):
+            if _sanitize_text(e) in _sanitize_text(ente):
+                return i
+        return 999
+
+    for rfc, data in agrupados.items():
+        data["entes"] = sorted(data["entes"], key=prioridad_ente)
 
     total_paginas = max(1, ceil(total / limite))
-    return render_template("resultados.html",
-                           resultados_agrupados=agrupados,
-                           busqueda=busqueda or "",
-                           pagina_actual=pagina,
-                           total_paginas=total_paginas,
-                           total=total)
+    return render_template(
+        "resultados.html",
+        resultados_agrupados=agrupados,
+        busqueda=busqueda or "",
+        pagina_actual=pagina,
+        total_paginas=total_paginas,
+        total=total
+    )
 
 # ===========================================================
-# RESULTADOS HORARIOS
-# ===========================================================
-@app.route("/resultados_horarios")
-def resultados_horarios():
-    if not session.get("autenticado"):
-        return redirect(url_for("login"))
-    resultados, total = db_manager.obtener_resultados_paginados("horarios", pagina=1, limite=100)
-    return render_template("resultados_horarios.html",
-                           resultados=resultados,
-                           busqueda=request.args.get("search", ""),
-                           pagina_actual=1,
-                           total_paginas=1,
-                           total=total)
-
-# ===========================================================
-# SUBIDA DE ARCHIVOS
-# ===========================================================
-def _save_uploads(field_name="files"):
-    files = request.files.getlist(field_name)
-    if not files:
-        return [], "No se recibieron archivos"
-    paths = []
-    for f in files:
-        fname = secure_filename(f.filename)
-        path = os.path.join(UPLOAD_FOLDER, fname)
-        f.save(path)
-        paths.append(path)
-    return paths, None
-
-@app.route("/upload", methods=["POST"])
-def upload_laboral():
-    if not session.get("autenticado"):
-        return jsonify({"error": "No autorizado"}), 403
-    paths, err = _save_uploads("files")
-    if err:
-        return jsonify({"error": err}), 400
-    processor = DataProcessor()
-    resultados = processor.procesar_archivos(paths)
-    nuevos, repetidos, _ = db_manager.comparar_con_historico(resultados, "laboral")
-    db_manager.guardar_resultados(nuevos, "laboral", nombre_archivo=os.path.basename(paths[0]) if paths else None)
-    return jsonify({"mensaje": "Archivos procesados correctamente",
-                    "total_resultados": len(resultados), "nuevos": len(nuevos)})
-
-@app.route("/upload_horarios", methods=["POST"])
-def upload_horarios():
-    if not session.get("autenticado"):
-        return jsonify({"error": "No autorizado"}), 403
-    paths, err = _save_uploads("files")
-    if err:
-        return jsonify({"error": err}), 400
-    try:
-        hp = HorariosProcessor()
-        resultados = hp.procesar_archivos(paths)
-    except Exception as e:
-        return jsonify({"error": f"Error procesando horarios: {e}"}), 500
-    nuevos, repetidos, _ = db_manager.comparar_con_historico(resultados, "horarios")
-    db_manager.guardar_resultados(nuevos, "horarios", nombre_archivo=os.path.basename(paths[0]) if paths else None)
-    return jsonify({"mensaje": "Horarios procesados correctamente",
-                    "total_resultados": len(resultados), "nuevos": len(nuevos)})
-
-# ===========================================================
-# EXPORTAR LABORAL
+# EXPORTAR RESULTADOS A EXCEL (completo)
 # ===========================================================
 @app.route("/exportar/laboral")
 def exportar_laboral():
     if not session.get("autenticado"):
         return redirect(url_for("login"))
+
     resultados, _ = db_manager.obtener_resultados_paginados("laboral", pagina=1, limite=999999)
-    filas = []
+    entes_usuario = session.get("entes", [])
+
+    filas, vistos = [], set()
     for r in resultados:
+        if not isinstance(r, dict):
+            continue
         rfc = (r.get("rfc") or "").upper()
-        nombre = r.get("nombre", "")
-        quincena = r.get("fecha_comun", "")
+        nombre = r.get("nombre", "") or ""
+        entes = sorted(list({e for e in (r.get("entes") or []) if e}), key=lambda e: e)
+
+        # Filtrar por permisos de usuario
+        if entes_usuario and not _allowed_all(entes_usuario):
+            if not any(_ente_match(e, entes_usuario) for e in entes):
+                continue
+
         for reg in r.get("registros", []):
-            filas.append([
-                rfc, nombre, quincena,
-                reg.get("ente",""), reg.get("puesto",""),
-                reg.get("fecha_ingreso",""), reg.get("fecha_egreso",""),
-                reg.get("monto","")
-            ])
-    wb = Workbook(); ws = wb.active; ws.title = "Laborales"
-    ws.append(["RFC","Nombre","Quincena","Ente","Puesto","Fecha Alta","Fecha Baja","Monto"])
-    for f in filas: ws.append(f)
-    out = BytesIO(); wb.save(out); out.seek(0)
+            fila = [
+                rfc,
+                nombre,
+                reg.get("ente", ""),
+                reg.get("puesto", ""),
+                reg.get("fecha_ingreso", ""),
+                reg.get("fecha_egreso", ""),
+                reg.get("monto", ""),
+                ", ".join(reg.get("qnas", {}).keys()) if isinstance(reg.get("qnas"), dict) else ""
+            ]
+            if tuple(fila) not in vistos:
+                vistos.add(tuple(fila))
+                filas.append(fila)
+
+    if not filas:
+        return jsonify({"error": "No hay datos para exportar"}), 404
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Laborales"
+    ws.append(["RFC", "Nombre", "Ente", "Puesto", "Fecha Alta", "Fecha Baja", "Monto", "Quincenas"])
+
+    for f in filas:
+        ws.append(f)
+
+    # Ajustar ancho de columnas
+    for col in ws.columns:
+        width = min(max(len(str(c.value)) if c.value else 0 for c in col) + 2, 50)
+        ws.column_dimensions[col[0].column_letter].width = width
+
+    out = BytesIO()
+    wb.save(out)
+    out.seek(0)
+
     filename = f"SASP_Laborales_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-    return send_file(out, as_attachment=True, download_name=filename,
-                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    return send_file(
+        out,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+# ===========================================================
+# RESULTADOS POR PERSONA (RFC)
+# ===========================================================
+@app.route("/resultados/rfc/<rfc>")
+def resultados_por_rfc(rfc):
+    if not session.get("autenticado"):
+        return redirect(url_for("login"))
+
+    info = db_manager.obtener_resultados_por_rfc(rfc)
+    if not info:
+        return render_template("empty.html", mensaje="No se encontró información del trabajador")
+
+    # Filtra según permisos del usuario
+    entes_usuario = session.get("entes", [])
+    if entes_usuario and not _allowed_all(entes_usuario):
+        info["registros"] = [
+            r for r in info["registros"]
+            if _ente_match(r.get("ente", ""), entes_usuario)
+        ]
+        info["entes"] = [
+            e for e in info["entes"] if _ente_match(e, entes_usuario)
+        ]
+
+    # Ordenar por prioridad de ente del usuario
+    def prioridad_ente(ente):
+        if not entes_usuario:
+            return 999
+        for i, e in enumerate(entes_usuario):
+            if _sanitize_text(e) in _sanitize_text(ente):
+                return i
+        return 999
+
+    info["entes"] = sorted(info["entes"], key=prioridad_ente)
+    return render_template("resultados_personal.html", rfc=rfc, info=info)
+
+
+# ===========================================================
+# RESULTADOS POR ENTE
+# ===========================================================
+@app.route("/resultados/ente/<ente>")
+def resultados_por_ente(ente):
+    if not session.get("autenticado"):
+        return redirect(url_for("login"))
+
+    resultados_agrupados = db_manager.obtener_resultados_por_ente(ente)
+    if not resultados_agrupados:
+        return render_template("empty.html", mensaje=f"No se encontraron registros del ente {ente}")
+
+    entes_usuario = session.get("entes", [])
+    if entes_usuario and not _allowed_all(entes_usuario):
+        # Mostrar solo si el ente está autorizado
+        if not any(_ente_match(ente, entes_usuario) for ente_aut in entes_usuario):
+            return render_template("empty.html", mensaje="No autorizado para ver este ente")
+
+    return render_template("resultados_ente.html", ente=ente, resultados_agrupados=resultados_agrupados)
+
 
 # ===========================================================
 # MAIN
 # ===========================================================
 if __name__ == "__main__":
-    print("🚀 Iniciando SASP 2025...")
+    print("🚀 Iniciando SCIL QNA 2025...")
     app.run(host="0.0.0.0", port=4050, debug=True)
 
