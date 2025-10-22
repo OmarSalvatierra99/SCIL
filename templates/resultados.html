@@ -2,110 +2,96 @@
 {% block title %}SASP - Resultados Laborales{% endblock %}
 
 {% block content %}
-<div class="container resultados">
-
-  <header class="page-header">
+<div class="container">
+  <div class="page-header">
     <h2>Resultados Laborales</h2>
-    <p class="subtitle">
-      Visualización general de cruces detectados por quincena, agrupados por RFC.
-    </p>
-  </header>
+    <p>Visualización general de cruces por quincena agrupados por RFC.</p>
+  </div>
 
-  <section class="search-section">
+  <div class="search-section">
     <form method="get" action="{{ url_for('resultados_generales') }}" class="search-box-minimal">
       <input type="text" name="search" placeholder="Buscar por nombre o RFC..." value="{{ busqueda }}">
       <button class="btn btn-primary" type="submit">Buscar</button>
     </form>
-
-    <a href="{{ url_for('exportar_laboral') }}" class="btn btn-secondary export-btn">
-      Exportar Excel
-    </a>
-  </section>
+    <a href="{{ url_for('exportar_laboral') }}" class="btn btn-secondary">Exportar Excel</a>
+  </div>
 
   {% if resultados_agrupados %}
-  <section class="results-grid">
-    {% for rfc, info in resultados_agrupados.items() %}
-    <article class="result-card">
-      <header class="result-header">
-        <div>
-          <h3><a href="{{ url_for('resultados_por_rfc', rfc=rfc) }}">{{ rfc }}</a></h3>
-          <p class="result-nombre">{{ info.nombre or 'Sin nombre' }}</p>
+    <div class="results-minimal">
+      {% for rfc, info in resultados_agrupados.items() %}
+      <div class="result-minimal-card">
+        <div class="result-minimal-header">
+          <div>
+            <h3>{{ rfc }}</h3>
+            <p style="color:var(--color-muted);">{{ info.nombre }}</p>
+          </div>
+          <div class="severity-minimal">
+            <div class="severity-dot severity-3"></div>
+            {{ info.entes|length }} entes
+          </div>
         </div>
-        <div class="result-meta">
-          <span class="meta-badge">{{ info.entes|length }} entes</span>
-        </div>
-      </header>
 
-      {% if info.entes %}
-      <div class="result-entes">
-        {% for e in info.entes %}
-          <a href="{{ url_for('resultados_por_ente', ente=e) }}" class="ente-tag">{{ e }}</a>
-        {% endfor %}
-      </div>
-      {% endif %}
-
-      {% if info.registros %}
-      <table class="detalle-tabla compacta">
-        <thead>
-          <tr>
-            <th>Ente</th>
-            <th>Puesto</th>
-            <th>Alta</th>
-            <th>Baja</th>
-            <th>Monto (MXN)</th>
-            <th>Qnas activas</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for reg in info.registros[:3] %}
-          <tr>
-            <td>{{ reg.ente or '—' }}</td>
-            <td>{{ reg.puesto or '—' }}</td>
-            <td>{{ reg.fecha_ingreso or '—' }}</td>
-            <td>{{ reg.fecha_egreso or '—' }}</td>
-            <td>{{ reg.monto or '—' }}</td>
-            <td>
-              {% if reg.qnas %}
-                <span class="qna-badge">{{ reg.qnas }}</span>
-              {% else %}
-                —
-              {% endif %}
-            </td>
-          </tr>
+        {% if info.entes %}
+        <div class="ente-list">
+          {% for e in info.entes %}
+            <span class="ente-tag" style="margin: 4px 6px 6px 0; display:inline-block;">{{ e }}</span>
           {% endfor %}
-        </tbody>
-      </table>
+        </div>
+        {% endif %}
 
-      {% if info.registros|length > 3 %}
-      <div class="more-link">
-        <a href="{{ url_for('resultados_por_rfc', rfc=rfc) }}">Ver más...</a>
+        {% if info.registros %}
+        <table class="detalle-tabla" style="margin-top: 1rem;">
+          <thead>
+            <tr>
+              <th>Ente</th>
+              <th>Puesto</th>
+              <th>Fecha Alta</th>
+              <th>Fecha Baja</th>
+              <th>Monto</th>
+              <th>Cruce Quincenas</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in info.registros %}
+            <tr>
+              <td>{{ r.ente }}</td>
+              <td>{{ r.puesto }}</td>
+              <td>{{ r.fecha_ingreso }}</td>
+              <td>{{ r.fecha_egreso }}</td>
+              <td>{{ r.monto }}</td>
+              <td>{{ r.qnas }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
       </div>
-      {% endif %}
-      {% endif %}
-    </article>
-    {% endfor %}
-  </section>
+      {% endfor %}
+    </div>
 
-  {% if total_paginas > 1 %}
-  <nav class="pagination">
-    {% for i in range(1, total_paginas + 1) %}
-      {% if i == pagina_actual %}
-        <span class="page-item active">{{ i }}</span>
-      {% else %}
-        <a href="{{ url_for('resultados_generales', page=i, search=busqueda) }}" class="page-item">{{ i }}</a>
+    {% if total_paginas > 1 %}
+    <div style="text-align:center; margin-top:2.5rem;">
+      {% if pagina_actual > 1 %}
+        <a href="{{ url_for('resultados_generales', page=pagina_actual-1, search=busqueda) }}" class="ente-tag">Anterior</a>
       {% endif %}
-    {% endfor %}
-  </nav>
-  {% endif %}
-
+      {% for i in range(1, total_paginas+1) %}
+        {% if i == pagina_actual %}
+          <span class="ente-tag" style="background:var(--color-accent);color:white;">{{ i }}</span>
+        {% else %}
+          <a href="{{ url_for('resultados_generales', page=i, search=busqueda) }}" class="ente-tag">{{ i }}</a>
+        {% endif %}
+      {% endfor %}
+      {% if pagina_actual < total_paginas %}
+        <a href="{{ url_for('resultados_generales', page=pagina_actual+1, search=busqueda) }}" class="ente-tag">Siguiente</a>
+      {% endif %}
+    </div>
+    {% endif %}
   {% else %}
-  <section class="empty-state">
-    <div class="empty-icon">📭</div>
-    <h3>No se encontraron registros</h3>
-    <p>Intente con otra búsqueda o cargue nuevos archivos desde el panel principal.</p>
-  </section>
+    <div class="empty-state-minimal">
+      <div class="empty-icon">📭</div>
+      <h3>No se encontraron registros</h3>
+    </div>
   {% endif %}
-
 </div>
 {% endblock %}
 
