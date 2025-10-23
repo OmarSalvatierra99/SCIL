@@ -20,7 +20,7 @@
       <div class="nav-brand">
         <img src="{{ url_for('static', filename='ofs_logo.png') }}" alt="SASP">
         <div>
-          <h1>SASP</h1>
+          <h1>SASP - Sistema de Auditoría de Servicios Personales</h1>
           <span>Órgano de Fiscalización Superior de Tlaxcala</span>
         </div>
       </div>
@@ -29,7 +29,7 @@
         <a href="{{ url_for('dashboard') }}" 
            class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">Inicio</a>
         <a href="{{ url_for('resultados_generales') }}" 
-           class="nav-link {% if request.endpoint == 'resultados_generales' %}active{% endif %}">Laborales</a>
+           class="nav-link {% if request.endpoint == 'resultados_generales' %}active{% endif %}">Resultados</a>
         <a href="{{ url_for('logout') }}" class="nav-link">Salir</a>
       </div>
     </div>
