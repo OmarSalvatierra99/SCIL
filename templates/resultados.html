@@ -1,97 +1,90 @@
 {% extends "base.html" %}
-{% block title %}SASP - Resultados Laborales{% endblock %}
+{% block title %}SASP · Resultados Laborales{% endblock %}
 
 {% block content %}
-<div class="container">
-  <div class="page-header">
-    <h2>Resultados Laborales</h2>
+<section class="page">
+  <header class="page-header">
+    <h1>Resultados Laborales</h1>
     <p>Visualización general de cruces por quincena agrupados por RFC.</p>
-  </div>
 
-  <div class="search-section">
-    <form method="get" action="{{ url_for('resultados_generales') }}" class="search-box-minimal">
+    <form method="get" action="{{ url_for('resultados_generales') }}">
       <input type="text" name="search" placeholder="Buscar por nombre o RFC..." value="{{ busqueda }}">
-      <button class="btn btn-primary" type="submit">Buscar</button>
+      <button type="submit" class="btn btn-primary"><i class="fa fa-search"></i> Buscar</button>
+      <a href="{{ url_for('exportar_laboral') }}" class="btn btn-secondary"><i class="fa fa-file-excel"></i> Exportar</a>
     </form>
-    <a href="{{ url_for('exportar_laboral') }}" class="btn btn-secondary">Exportar Excel</a>
-  </div>
+  </header>
 
   {% if resultados_agrupados %}
-    <div class="results-minimal">
-      {% for rfc, info in resultados_agrupados.items() %}
-      <div class="result-minimal-card">
-        <div class="result-minimal-header">
-          <div>
-            <h3>{{ rfc }}</h3>
-            <p style="color:var(--color-muted);">{{ info.nombre }}</p>
-          </div>
-          <div class="severity-minimal">
-            <div class="severity-dot severity-3"></div>
-            {{ info.entes|length }} entes
-          </div>
+  <div class="results-grid">
+    {% for rfc, info in resultados_agrupados.items() %}
+    <article class="result-card">
+
+      <!-- Encabezado principal -->
+      <header class="result-header">
+        <div>
+          <h2><a href="{{ url_for('resultados_por_rfc', rfc=rfc) }}">{{ rfc }}</a></h2>
+          <p>{{ info.nombre or 'Sin nombre registrado' }}</p>
         </div>
+        <span>{{ info.entes|length }} entes</span>
+      </header>
 
-        {% if info.entes %}
-        <div class="ente-list">
-          {% for e in info.entes %}
-            <span class="ente-tag" style="margin: 4px 6px 6px 0; display:inline-block;">{{ e }}</span>
-          {% endfor %}
-        </div>
-        {% endif %}
-
-        {% if info.registros %}
-        <table class="detalle-tabla" style="margin-top: 1rem;">
-          <thead>
-            <tr>
-              <th>Ente</th>
-              <th>Puesto</th>
-              <th>Fecha Alta</th>
-              <th>Fecha Baja</th>
-              <th>Monto</th>
-              <th>Cruce Quincenas</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for r in info.registros %}
-            <tr>
-              <td>{{ r.ente }}</td>
-              <td>{{ r.puesto }}</td>
-              <td>{{ r.fecha_ingreso }}</td>
-              <td>{{ r.fecha_egreso }}</td>
-              <td>{{ r.monto }}</td>
-              <td>{{ r.qnas }}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-        {% endif %}
-      </div>
-      {% endfor %}
-    </div>
-
-    {% if total_paginas > 1 %}
-    <div style="text-align:center; margin-top:2.5rem;">
-      {% if pagina_actual > 1 %}
-        <a href="{{ url_for('resultados_generales', page=pagina_actual-1, search=busqueda) }}" class="ente-tag">Anterior</a>
+      <!-- Entes vinculados -->
+      {% if info.entes %}
+      <section class="ente-tags">
+        {% for e in info.entes %}
+        <a href="{{ url_for('resultados_por_ente', ente=e) }}">{{ e }}</a>
+        {% endfor %}
+      </section>
       {% endif %}
-      {% for i in range(1, total_paginas+1) %}
-        {% if i == pagina_actual %}
-          <span class="ente-tag" style="background:var(--color-accent);color:white;">{{ i }}</span>
-        {% else %}
-          <a href="{{ url_for('resultados_generales', page=i, search=busqueda) }}" class="ente-tag">{{ i }}</a>
-        {% endif %}
-      {% endfor %}
-      {% if pagina_actual < total_paginas %}
-        <a href="{{ url_for('resultados_generales', page=pagina_actual+1, search=busqueda) }}" class="ente-tag">Siguiente</a>
+
+      <!-- Registros laborales -->
+      {% if info.registros %}
+      <section class="registro-list">
+        {% for r in info.registros %}
+        <article class="registro-item">
+          <header>
+            <h3>{{ r.puesto or 'Sin puesto definido' }}</h3>
+            <p>{{ r.ente }}</p>
+          </header>
+
+          <dl>
+            <dt>Fecha Alta</dt><dd>{{ r.fecha_ingreso or '—' }}</dd>
+            <dt>Fecha Baja</dt><dd>{{ r.fecha_egreso or '—' }}</dd>
+            <dt>Monto</dt><dd>{{ r.monto or '—' }}</dd>
+            <dt>Cruce Quincenas</dt><dd>{{ r.qnas or '—' }}</dd>
+          </dl>
+        </article>
+        {% endfor %}
+      </section>
       {% endif %}
-    </div>
+    </article>
+    {% endfor %}
+  </div>
+
+  <!-- Paginación -->
+  {% if total_paginas > 1 %}
+  <nav class="pagination">
+    {% if pagina_actual > 1 %}
+      <a href="{{ url_for('resultados_generales', page=pagina_actual-1, search=busqueda) }}">Anterior</a>
     {% endif %}
-  {% else %}
-    <div class="empty-state-minimal">
-      <div class="empty-icon">📭</div>
-      <h3>No se encontraron registros</h3>
-    </div>
+    {% for i in range(1, total_paginas+1) %}
+      {% if i == pagina_actual %}
+        <span>{{ i }}</span>
+      {% else %}
+        <a href="{{ url_for('resultados_generales', page=i, search=busqueda) }}">{{ i }}</a>
+      {% endif %}
+    {% endfor %}
+    {% if pagina_actual < total_paginas %}
+      <a href="{{ url_for('resultados_generales', page=pagina_actual+1, search=busqueda) }}">Siguiente</a>
+    {% endif %}
+  </nav>
   {% endif %}
-</div>
+
+  {% else %}
+  <section class="empty-state">
+    <p>📭 No se encontraron registros.</p>
+  </section>
+  {% endif %}
+</section>
 {% endblock %}
 
