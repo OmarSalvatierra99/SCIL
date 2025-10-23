@@ -60,7 +60,6 @@ def _allowed_all(entes):
 
 
 def _qna_labels(qnas_dict):
-    """Convierte QNA1..QNA12 en 'Quincena X' ordenadas."""
     if not qnas_dict:
         return ""
     qnas = list(qnas_dict.keys())
@@ -148,27 +147,16 @@ def upload_laboral():
     })
 
 # -----------------------------------------------------------
-# Resultados Generales
+# Reporte por Ente (sin duplicados)
 # -----------------------------------------------------------
 @app.route("/resultados")
-def resultados_generales():
+def reporte_por_ente():
     if not session.get("autenticado"):
         return redirect(url_for("login"))
 
-    pagina = int(request.args.get("page", 1))
-    busqueda = request.args.get("search", "").strip() or None
-    limite = 100
-
-    resultados, total = db_manager.obtener_resultados_paginados("laboral", busqueda, pagina, limite)
+    resultados, _ = db_manager.obtener_resultados_paginados("laboral", pagina=1, limite=999999)
     if not resultados:
-        return render_template(
-            "resultados.html",
-            resultados_agrupados={},
-            busqueda=busqueda or "",
-            pagina_actual=pagina,
-            total_paginas=1,
-            total=0
-        )
+        return render_template("resultados.html", reporte_por_ente={})
 
     entes_usuario = session.get("entes", [])
     if not _allowed_all(entes_usuario) and entes_usuario:
@@ -178,57 +166,30 @@ def resultados_generales():
                    if any(_sanitize_text(x) in _sanitize_text(e) for x in entes_usuario))
         ]
 
-    agrupados = {}
+    # Agrupar por ente sin duplicar
+    reporte = {}
+    filas_vistas = set()
+
     for r in resultados:
-        rfc = r.get("rfc")
-        if not rfc:
-            continue
+        for ente in r.get("entes", []):
+            ente_nom = _limpiar_nombre_ente(ente)
+            if ente_nom not in reporte:
+                reporte[ente_nom] = []
 
-        if rfc not in agrupados:
-            agrupados[rfc] = {
-                "nombre": r.get("nombre", ""),
-                "entes": set(),
-                "registros": [],
-                "vistos": set()
-            }
+            for reg in r.get("registros", []):
+                clave = (r["rfc"], r.get("nombre"), reg.get("puesto"), ente_nom)
+                if clave in filas_vistas:
+                    continue
+                filas_vistas.add(clave)
 
-        for e in r.get("entes", []):
-            agrupados[rfc]["entes"].add(_limpiar_nombre_ente(e))
+                reporte[ente_nom].append({
+                    "rfc": r["rfc"],
+                    "nombre": r.get("nombre", ""),
+                    "puesto": reg.get("puesto", ""),
+                    "entes_incompatibles": ", ".join(sorted(r.get("entes", []))),
+                })
 
-        for reg in r.get("registros", []):
-            clave = (
-                _limpiar_nombre_ente(reg.get("ente")),
-                reg.get("puesto"),
-                reg.get("fecha_ingreso"),
-                reg.get("fecha_egreso"),
-                reg.get("monto"),
-                str(reg.get("qnas"))
-            )
-            if clave in agrupados[rfc]["vistos"]:
-                continue
-            agrupados[rfc]["vistos"].add(clave)
-
-            agrupados[rfc]["registros"].append({
-                "ente": _limpiar_nombre_ente(reg.get("ente")),
-                "puesto": reg.get("puesto", ""),
-                "fecha_ingreso": formato_fecha(reg.get("fecha_ingreso")),
-                "fecha_egreso": formato_fecha(reg.get("fecha_egreso")),
-                "monto": formato_moneda(reg.get("monto")),
-                "qnas": _qna_labels(reg.get("qnas", {}))
-            })
-
-    for r in agrupados.values():
-        r.pop("vistos", None)
-
-    total_paginas = max(1, ceil(total / limite))
-    return render_template(
-        "resultados.html",
-        resultados_agrupados=agrupados,
-        busqueda=busqueda or "",
-        pagina_actual=pagina,
-        total_paginas=total_paginas,
-        total=total
-    )
+    return render_template("resultados.html", reporte_por_ente=reporte)
 
 # -----------------------------------------------------------
 # Detalle por RFC (trabajador)
@@ -260,35 +221,6 @@ def resultados_por_rfc(rfc):
     info["registros"] = registros_unicos
 
     return render_template("detalle_rfc.html", rfc=rfc.upper(), info=info)
-
-# -----------------------------------------------------------
-# Detalle por Ente
-# -----------------------------------------------------------
-@app.route("/resultados/ente/<ente>")
-def resultados_por_ente(ente):
-    if not session.get("autenticado"):
-        return redirect(url_for("login"))
-
-    info = db_manager.obtener_resultados_por_ente(ente.upper())
-    if not info:
-        return render_template("empty.html", tipo="ente", mensaje=f"No se encontraron registros para el ente {ente}")
-
-    for d in info.values():
-        vistos = set()
-        registros_unicos = []
-        for r in d.get("registros", []):
-            clave = (r.get("ente"), r.get("puesto"), r.get("fecha_ingreso"))
-            if clave in vistos:
-                continue
-            vistos.add(clave)
-            r["fecha_ingreso"] = formato_fecha(r.get("fecha_ingreso"))
-            r["fecha_egreso"] = formato_fecha(r.get("fecha_egreso"))
-            r["monto"] = formato_moneda(r.get("monto"))
-            r["qnas"] = _qna_labels(r.get("qnas", {}))
-            registros_unicos.append(r)
-        d["registros"] = registros_unicos
-
-    return render_template("detalle_ente.html", ente=ente.upper(), resultados_agrupados=info)
 
 # -----------------------------------------------------------
 # Exportar a Excel

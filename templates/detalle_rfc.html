@@ -1,64 +1,41 @@
 {% extends "base.html" %}
-{% block title %}SASP · Detalle del Trabajador{% endblock %}
+{% block title %}Detalle RFC {{ rfc }} - SASP{% endblock %}
 
 {% block content %}
-<section class="page detalle-rfc">
-  <header class="page-header">
-    <h1>Detalle del Trabajador</h1>
-    <p>Historial laboral detectado para el RFC <strong>{{ rfc }}</strong>.</p>
-  </header>
+<section class="detalle-container">
+  <h2>Detalle del Trabajador</h2>
+  <div class="detalle-header">
+    <p><strong>RFC:</strong> {{ rfc }}</p>
+    <p><strong>Nombre:</strong> {{ info.nombre }}</p>
+  </div>
 
-  {% if info %}
-  <article class="result-card">
-    <header class="result-header">
-      <h2>{{ info.nombre or 'Sin nombre registrado' }}</h2>
-      <p>RFC: {{ rfc }}</p>
-    </header>
-
-    {% if info.entes %}
-    <section class="ente-tags">
-      <h3>Entes vinculados</h3>
-      {% for e in info.entes %}
-      <a href="{{ url_for('resultados_por_ente', ente=e) }}">{{ e }}</a>
-      {% endfor %}
-    </section>
-    {% endif %}
-
-    {% if info.registros %}
-    <section class="registro-list">
-      {% for reg in info.registros %}
-      <article class="registro-item">
-        <header>
-          <h3>{{ reg.puesto or 'Sin puesto definido' }}</h3>
-          <p>{{ reg.ente }}</p>
-        </header>
-
-        <dl>
-          <dt>Fecha Alta</dt><dd>{{ reg.fecha_ingreso or '—' }}</dd>
-          <dt>Fecha Baja</dt><dd>{{ reg.fecha_egreso or '—' }}</dd>
-          <dt>Monto (MXN)</dt><dd>{{ reg.monto or '—' }}</dd>
-          <dt>Cruce Quincenas</dt><dd>{{ reg.qnas or '—' }}</dd>
-        </dl>
-      </article>
-      {% endfor %}
-    </section>
-    {% else %}
-    <section class="empty-state">
-      <p>📭 No se encontraron registros laborales.</p>
-    </section>
-    {% endif %}
-  </article>
-
-  <footer class="volver">
-    <a href="{{ url_for('resultados_generales') }}" class="btn btn-secondary">
-      ← Volver a Resultados Generales
-    </a>
-  </footer>
-
+  {% if info.registros %}
+    <table class="tabla-detalle">
+      <thead>
+        <tr>
+          <th>Ente</th>
+          <th>Puesto</th>
+          <th>Fecha Ingreso</th>
+          <th>Fecha Egreso</th>
+          <th>Monto</th>
+          <th>Quincenas Activas</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for reg in info.registros %}
+          <tr>
+            <td>{{ reg.ente }}</td>
+            <td>{{ reg.puesto }}</td>
+            <td>{{ reg.fecha_ingreso }}</td>
+            <td>{{ reg.fecha_egreso }}</td>
+            <td>{{ reg.monto }}</td>
+            <td>{{ reg.qnas }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   {% else %}
-  <section class="empty-state">
-    <p>👤 No se encontró información del trabajador.</p>
-  </section>
+    <p class="msg-vacio">No hay registros para este RFC.</p>
   {% endif %}
 </section>
 {% endblock %}

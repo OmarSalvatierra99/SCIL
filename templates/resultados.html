@@ -1,90 +1,46 @@
 {% extends "base.html" %}
-{% block title %}SASP · Resultados Laborales{% endblock %}
+{% block title %}Reporte por Ente{% endblock %}
 
 {% block content %}
-<section class="page">
-  <header class="page-header">
-    <h1>Resultados Laborales</h1>
-    <p>Visualización general de cruces por quincena agrupados por RFC.</p>
+<div class="report-container">
 
-    <form method="get" action="{{ url_for('resultados_generales') }}">
-      <input type="text" name="search" placeholder="Buscar por nombre o RFC..." value="{{ busqueda }}">
-      <button type="submit" class="btn btn-primary"><i class="fa fa-search"></i> Buscar</button>
-      <a href="{{ url_for('exportar_laboral') }}" class="btn btn-secondary"><i class="fa fa-file-excel"></i> Exportar</a>
-    </form>
-  </header>
-
-  {% if resultados_agrupados %}
-  <div class="results-grid">
-    {% for rfc, info in resultados_agrupados.items() %}
-    <article class="result-card">
-
-      <!-- Encabezado principal -->
-      <header class="result-header">
-        <div>
-          <h2><a href="{{ url_for('resultados_por_rfc', rfc=rfc) }}">{{ rfc }}</a></h2>
-          <p>{{ info.nombre or 'Sin nombre registrado' }}</p>
-        </div>
-        <span>{{ info.entes|length }} entes</span>
-      </header>
-
-      <!-- Entes vinculados -->
-      {% if info.entes %}
-      <section class="ente-tags">
-        {% for e in info.entes %}
-        <a href="{{ url_for('resultados_por_ente', ente=e) }}">{{ e }}</a>
-        {% endfor %}
-      </section>
-      {% endif %}
-
-      <!-- Registros laborales -->
-      {% if info.registros %}
-      <section class="registro-list">
-        {% for r in info.registros %}
-        <article class="registro-item">
-          <header>
-            <h3>{{ r.puesto or 'Sin puesto definido' }}</h3>
-            <p>{{ r.ente }}</p>
-          </header>
-
-          <dl>
-            <dt>Fecha Alta</dt><dd>{{ r.fecha_ingreso or '—' }}</dd>
-            <dt>Fecha Baja</dt><dd>{{ r.fecha_egreso or '—' }}</dd>
-            <dt>Monto</dt><dd>{{ r.monto or '—' }}</dd>
-            <dt>Cruce Quincenas</dt><dd>{{ r.qnas or '—' }}</dd>
-          </dl>
-        </article>
-        {% endfor %}
-      </section>
-      {% endif %}
-    </article>
-    {% endfor %}
+  {% if not reporte_por_ente %}
+  <div class="msg-vacio">
+    <p>No se encontraron resultados laborales cargados.</p>
   </div>
-
-  <!-- Paginación -->
-  {% if total_paginas > 1 %}
-  <nav class="pagination">
-    {% if pagina_actual > 1 %}
-      <a href="{{ url_for('resultados_generales', page=pagina_actual-1, search=busqueda) }}">Anterior</a>
-    {% endif %}
-    {% for i in range(1, total_paginas+1) %}
-      {% if i == pagina_actual %}
-        <span>{{ i }}</span>
-      {% else %}
-        <a href="{{ url_for('resultados_generales', page=i, search=busqueda) }}">{{ i }}</a>
-      {% endif %}
-    {% endfor %}
-    {% if pagina_actual < total_paginas %}
-      <a href="{{ url_for('resultados_generales', page=pagina_actual+1, search=busqueda) }}">Siguiente</a>
-    {% endif %}
-  </nav>
-  {% endif %}
-
   {% else %}
-  <section class="empty-state">
-    <p>📭 No se encontraron registros.</p>
-  </section>
+    <h2>Reporte por Ente</h2>
+
+    {% for ente, filas in reporte_por_ente.items() %}
+    <div class="ente-bloque">
+      <div class="ente-nombre">{{ ente }}</div>
+
+      <table class="tabla-resultados">
+        <thead>
+          <tr>
+            <th>RFC</th>
+            <th>Nombre</th>
+            <th>Puesto</th>
+            <th>Entes con Incompatibilidad</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in filas %}
+          <tr>
+            <td>
+              <a class="link-rfc" href="{{ url_for('resultados_por_rfc', rfc=f.rfc) }}">{{ f.rfc }}</a>
+            </td>
+            <td>{{ f.nombre }}</td>
+            <td>{{ f.puesto }}</td>
+            <td>{{ f.entes_incompatibles }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endfor %}
   {% endif %}
-</section>
+
+</div>
 {% endblock %}
 

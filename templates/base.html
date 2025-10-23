@@ -8,7 +8,7 @@
   <!-- CSS principal -->
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 
-  <!-- Ícono de pestaña (opcional) -->
+  <!-- Ícono de pestaña -->
   <link rel="icon" href="{{ url_for('static', filename='ofs_logo.png') }}" type="image/png">
 
   <!-- JS principal diferido -->
@@ -26,10 +26,12 @@
       </div>
 
       <div class="nav-links">
-        <a href="{{ url_for('dashboard') }}" 
+        <a href="{{ url_for('dashboard') }}"
            class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">Inicio</a>
-        <a href="{{ url_for('resultados_generales') }}" 
-           class="nav-link {% if request.endpoint == 'resultados_generales' %}active{% endif %}">Resultados</a>
+
+        <a href="{{ url_for('reporte_por_ente') }}"
+           class="nav-link {% if request.endpoint == 'reporte_por_ente' %}active{% endif %}">Resultados</a>
+
         <a href="{{ url_for('logout') }}" class="nav-link">Salir</a>
       </div>
     </div>
