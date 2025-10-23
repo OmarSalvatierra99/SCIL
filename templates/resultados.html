@@ -11,7 +11,7 @@
   {% else %}
     <h2>Reporte por Ente</h2>
 
-    {% for ente, filas in reporte_por_ente.items() %}
+    {% for ente, filas in reporte_por_ente|dictsort %}
     <div class="ente-bloque">
       <div class="ente-nombre">{{ ente }}</div>
 
@@ -25,7 +25,7 @@
           </tr>
         </thead>
         <tbody>
-          {% for f in filas %}
+          {% for f in filas|sort(attribute='puesto') %}
           <tr>
             <td>
               <a class="link-rfc" href="{{ url_for('resultados_por_rfc', rfc=f.rfc) }}">{{ f.rfc }}</a>

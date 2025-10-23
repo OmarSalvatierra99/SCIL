@@ -13,12 +13,12 @@
     <table class="tabla-detalle">
       <thead>
         <tr>
-          <th>Ente</th>
+          <th>Ente Incompatibilidad</th>
           <th>Puesto</th>
-          <th>Fecha Ingreso</th>
-          <th>Fecha Egreso</th>
-          <th>Monto</th>
+          <th>Total Percepciones</th>
           <th>Quincenas Activas</th>
+          <th>Fecha Alta</th>
+          <th>Fecha Baja</th>
         </tr>
       </thead>
       <tbody>
@@ -26,10 +26,10 @@
           <tr>
             <td>{{ reg.ente }}</td>
             <td>{{ reg.puesto }}</td>
-            <td>{{ reg.fecha_ingreso }}</td>
-            <td>{{ reg.fecha_egreso }}</td>
             <td>{{ reg.monto }}</td>
             <td>{{ reg.qnas }}</td>
+            <td>{{ reg.fecha_ingreso }}</td>
+            <td>{{ reg.fecha_egreso }}</td>
           </tr>
         {% endfor %}
       </tbody>
