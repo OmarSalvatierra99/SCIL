@@ -83,11 +83,20 @@ def login():
         clave = request.form.get("clave")
         datos = db_manager.get_usuario(usuario, clave)
         if datos:
+            entes_data = datos["entes"]
+            # Acepta lista o texto plano
+            if isinstance(entes_data, str):
+                entes_list = [e.strip() for e in entes_data.split(",") if e.strip()]
+            elif isinstance(entes_data, list):
+                entes_list = entes_data
+            else:
+                entes_list = []
+
             session.update({
                 "autenticado": True,
                 "usuario": usuario,
                 "nombre": datos["nombre"],
-                "entes": datos["entes"],
+                "entes": entes_list,
             })
             return redirect(url_for("dashboard"))
         return render_template("login.html", error="Usuario o clave incorrectos")
@@ -156,7 +165,7 @@ def reporte_por_ente():
 
     resultados, _ = db_manager.obtener_resultados_paginados("laboral", pagina=1, limite=999999)
     if not resultados:
-        return render_template("resultados.html", reporte_por_ente={})
+        return render_template("resultados.html", resultados={})
 
     entes_usuario = session.get("entes", [])
     if not _allowed_all(entes_usuario) and entes_usuario:
@@ -186,10 +195,12 @@ def reporte_por_ente():
                     "rfc": r["rfc"],
                     "nombre": r.get("nombre", ""),
                     "puesto": reg.get("puesto", ""),
-                    "entes_incompatibles": ", ".join(sorted(r.get("entes", []))),
+                    "incompatibles": sorted(r.get("entes", [])),
+                    "estado": r.get("estado", ""),
+                    "ente": ente_nom
                 })
 
-    return render_template("resultados.html", reporte_por_ente=reporte)
+    return render_template("resultados.html", resultados=reporte)
 
 # -----------------------------------------------------------
 # Detalle por RFC (trabajador)
@@ -277,6 +288,14 @@ def exportar_laboral():
         download_name=filename,
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
+@app.route("/solventacion/<rfc>")
+def solventacion_detalle(rfc):
+    if not session.get("autenticado"):
+        return redirect(url_for("login"))
+    info = db_manager.obtener_resultados_por_rfc(rfc.upper())
+    solventacion_texto = info.get("solventacion", "") if info else ""
+    return render_template("solventacion.html", rfc=rfc.upper(), solventacion=solventacion_texto)
 
 # -----------------------------------------------------------
 # Main

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Solventación{% endblock %}
+
+{% block content %}
+<div class="solventacion-container">
+  <h2>Solventación para RFC {{ rfc }}</h2>
+
+  <form id="solventacionForm">
+    <label for="solventacion">Observación o enlace:</label>
+    <textarea id="solventacion" name="solventacion" rows="5" placeholder="Describe o pega el enlace de la solventación">{{ solventacion or '' }}</textarea>
+    <div class="acciones">
+      <button type="submit" class="btn btn-primary">Guardar</button>
+      <a href="{{ url_for('resultados_por_rfc', rfc=rfc) }}" class="btn btn-secondary">Regresar</a>
+    </div>
+  </form>
+</div>
+
+<script>
+document.getElementById('solventacionForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const rfc = "{{ rfc }}";
+  const solventacion = document.getElementById('solventacion').value;
+  const res = await fetch('/actualizar_estado', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rfc, estado: 'Solventado', solventacion })
+  });
+  const data = await res.json();
+  alert(data.mensaje || data.error);
+});
+</script>
+{% endblock %}
+

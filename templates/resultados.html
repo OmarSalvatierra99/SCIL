@@ -1,46 +1,57 @@
 {% extends "base.html" %}
-{% block title %}Reporte por Ente{% endblock %}
+{% block title %}Resultados Generales{% endblock %}
 
 {% block content %}
 <div class="report-container">
+  <h2>Reporte por Ente</h2>
 
-  {% if not reporte_por_ente %}
-  <div class="msg-vacio">
-    <p>No se encontraron resultados laborales cargados.</p>
-  </div>
-  {% else %}
-    <h2>Reporte por Ente</h2>
-
-    {% for ente, filas in reporte_por_ente|dictsort %}
-    <div class="ente-bloque">
-      <div class="ente-nombre">{{ ente }}</div>
-
-      <table class="tabla-resultados">
-        <thead>
-          <tr>
-            <th>RFC</th>
-            <th>Nombre</th>
-            <th>Puesto</th>
-            <th>Entes con Incompatibilidad</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for f in filas|sort(attribute='puesto') %}
-          <tr>
-            <td>
-              <a class="link-rfc" href="{{ url_for('resultados_por_rfc', rfc=f.rfc) }}">{{ f.rfc }}</a>
-            </td>
-            <td>{{ f.nombre }}</td>
-            <td>{{ f.puesto }}</td>
-            <td>{{ f.entes_incompatibles }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+  {% if resultados %}
+    {% for ente, registros in resultados.items() %}
+      <div class="ente-bloque">
+        <div class="ente-nombre">{{ ente }}</div>
+        <table class="tabla-resultados">
+          <thead>
+            <tr>
+              <th>RFC</th>
+              <th>Nombre</th>
+              <th>Puesto</th>
+              <th>Entes con Incompatibilidad</th>
+              <th>Solventado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in registros %}
+              <tr>
+                <td>
+		<a href="{{ url_for('resultados_por_rfc', rfc=r.rfc) }}" class="link-rfc">{{ r.rfc }}</a>
+                </td>
+                <td>{{ r.nombre }}</td>
+                <td>{{ r.puesto }}</td>
+                <td>{{ r.incompatibles|join(', ') }}</td>
+                <td>
+                  {% set editable = false %}
+                  {% for e in session.get('entes', []) %}
+                    {% if e|upper in r.ente|upper or e|upper == 'TODOS' %}
+                      {% set editable = true %}
+                    {% endif %}
+                  {% endfor %}
+                  <label class="switch">
+                    <input type="checkbox" 
+                           {% if r.estado == 'Solventado' %}checked{% endif %}
+                           {% if not editable %}disabled{% endif %}
+			   onchange="window.location.href='{{ url_for('solventacion_detalle', rfc=r.rfc) }}'">
+                    <span class="slider"></span>
+                  </label>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     {% endfor %}
+  {% else %}
+    <div class="msg-vacio">No hay resultados disponibles.</div>
   {% endif %}
-
 </div>
 {% endblock %}
 

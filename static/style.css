@@ -99,6 +99,175 @@ body {
 }
 
 /* =========================================================
+   LOGIN — Fondo blanco, diseño minimalista elegante
+   ========================================================= */
+.login-body {
+  background: #ffffff; /* Fondo blanco total */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  font-family: "Inter", "Segoe UI", Roboto, sans-serif;
+  color: var(--color-text);
+}
+
+/* Contenedor principal */
+.login-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  width: 100%;
+}
+
+/* Tarjeta principal */
+.login-card {
+  background: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+  padding: 2.5rem 2rem;
+  max-width: 420px;
+  width: 100%;
+  text-align: center;
+  animation: fadeIn 0.6s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(15px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Logo */
+.login-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+.login-logo img {
+  width: 84px;
+  height: auto;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+  padding: 6px;
+  animation: logoPop 0.5s ease-out both;
+}
+
+@keyframes logoPop {
+  from { opacity: 0; transform: translateY(8px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Título y subtítulo */
+.login-title {
+  color: var(--color-primary);
+  font-size: 2.2rem;
+  margin-bottom: 0.3rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+
+.login-subtitle {
+  font-size: 0.95rem;
+  color: var(--color-muted);
+  margin-bottom: 2rem;
+  line-height: 1.4;
+}
+
+.login-subtitle span {
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}
+
+/* Grupos de entrada */
+.input-group {
+  position: relative;
+  margin-bottom: 1.5rem;
+}
+
+.input-icon {
+  position: absolute;
+  top: 50%;
+  right: 1rem;
+  transform: translateY(-50%);
+  font-size: 1.1rem;
+  color: var(--color-muted);
+}
+
+.login-input {
+  width: 100%;
+  padding: 0.9rem 2.5rem 0.9rem 1rem;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  outline: none;
+  font-size: 1rem;
+  background: #f8fafc;
+  color: var(--color-text);
+  transition: all 0.3s ease;
+}
+
+.login-input::placeholder {
+  color: var(--color-muted);
+}
+
+.login-input:focus {
+  border-color: var(--color-accent);
+  background: #ffffff;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+/* Botón principal */
+.btn-login {
+  width: 100%;
+  background: var(--color-accent);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 1rem;
+  font-weight: 600;
+  font-size: 1rem;
+  transition: all 0.25s ease;
+  cursor: pointer;
+}
+
+.btn-login:hover {
+  background: var(--color-primary);
+  transform: translateY(-2px);
+}
+
+/* Error */
+.alert-error {
+  background: rgba(239, 68, 68, 0.08);
+  border-left: 4px solid var(--color-error);
+  color: var(--color-error);
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+/* Footer */
+.login-footer {
+  margin-top: 2rem;
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .login-card {
+    padding: 2rem 1.5rem;
+    border-radius: 16px;
+  }
+  .login-logo img { width: 72px; padding: 5px; }
+  .login-title { font-size: 1.8rem; }
+}
+
+
+/* =========================================================
    DASHBOARD
    ========================================================= */
 .dashboard {
@@ -381,4 +550,34 @@ body {
   .upload-area { padding: 2rem 1rem; }
   .btn { width: 100%; }
 }
+
+/* ===== SWITCH (Estado Solventado) ===== */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 22px;
+  vertical-align: middle;
+}
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: #ccc;
+  border-radius: 24px;
+  transition: .3s;
+}
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 16px; width: 16px;
+  left: 3px; bottom: 3px;
+  background-color: white;
+  border-radius: 50%;
+  transition: .3s;
+}
+input:checked + .slider { background-color: #16a34a; }
+input:checked + .slider:before { transform: translateX(22px); }
+input:disabled + .slider { background-color: #e5e7eb; cursor: not-allowed; }
 

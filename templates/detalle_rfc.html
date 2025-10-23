@@ -1,42 +1,57 @@
 {% extends "base.html" %}
-{% block title %}Detalle RFC {{ rfc }} - SASP{% endblock %}
+{% block title %}Detalle del RFC{% endblock %}
 
 {% block content %}
-<section class="detalle-container">
-  <h2>Detalle del Trabajador</h2>
+<div class="detalle-container">
   <div class="detalle-header">
     <p><strong>RFC:</strong> {{ rfc }}</p>
     <p><strong>Nombre:</strong> {{ info.nombre }}</p>
   </div>
 
-  {% if info.registros %}
-    <table class="tabla-detalle">
-      <thead>
+  <table class="tabla-detalle">
+    <thead>
+      <tr>
+        <th>Ente Incompatibilidad</th>
+        <th>Puesto</th>
+        <th>Total Percepciones</th>
+        <th>Quincenas</th>
+        <th>Fecha Alta</th>
+        <th>Fecha Baja</th>
+        <th>Solventada</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in info.registros %}
         <tr>
-          <th>Ente Incompatibilidad</th>
-          <th>Puesto</th>
-          <th>Total Percepciones</th>
-          <th>Quincenas Activas</th>
-          <th>Fecha Alta</th>
-          <th>Fecha Baja</th>
+          <td>{{ r.ente }}</td>
+          <td>{{ r.puesto }}</td>
+          <td>{{ r.monto }}</td>
+          <td>{{ r.qnas }}</td>
+          <td>{{ r.fecha_ingreso }}</td>
+          <td>{{ r.fecha_egreso }}</td>
+          <td>
+            {% set editable = false %}
+            {% for e in session.get('entes', []) %}
+              {% if e|upper in r.ente|upper or e|upper == 'TODOS' %}
+                {% set editable = true %}
+              {% endif %}
+            {% endfor %}
+            <label class="switch">
+              <input type="checkbox"
+                     {% if r.estado == 'Solventado' %}checked{% endif %}
+                     {% if not editable %}disabled{% endif %}
+                     onchange="window.location.href='{{ url_for('solventacion_detalle', rfc=rfc) }}'">
+              <span class="slider"></span>
+            </label>
+          </td>
         </tr>
-      </thead>
-      <tbody>
-        {% for reg in info.registros %}
-          <tr>
-            <td>{{ reg.ente }}</td>
-            <td>{{ reg.puesto }}</td>
-            <td>{{ reg.monto }}</td>
-            <td>{{ reg.qnas }}</td>
-            <td>{{ reg.fecha_ingreso }}</td>
-            <td>{{ reg.fecha_egreso }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% else %}
-    <p class="msg-vacio">No hay registros para este RFC.</p>
-  {% endif %}
-</section>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="btn-area" style="margin-top:2rem;text-align:center;">
+    <a href="{{ url_for('reporte_por_ente') }}" class="btn btn-secondary">← Regresar</a>
+  </div>
+</div>
 {% endblock %}
 
