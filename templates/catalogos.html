@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Catálogos - SASP{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+  <div class="page-header">
+    <h2>Catálogos Institucionales</h2>
+    <p class="subtitle">Consulta de Entes Estatales y Municipios Registrados</p>
+  </div>
+
+  <div class="tabs-container">
+    <div class="tabs">
+      <button class="tab active" data-tab="entes">Entes Estatales</button>
+      <button class="tab" data-tab="municipios">Municipios</button>
+    </div>
+
+    <div class="tab-content active" id="tab-entes">
+      {% if entes %}
+      <table class="tabla-resultados">
+        <thead>
+          <tr>
+            <th>Clave</th>
+            <th>Nombre</th>
+            <th>Siglas</th>
+            <th>Clasificación</th>
+            <th>Ámbito</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in entes %}
+          <tr>
+            <td>{{ e.clave }}</td>
+            <td>{{ e.nombre }}</td>
+            <td>{{ e.siglas or '-' }}</td>
+            <td>{{ e.clasificacion or '-' }}</td>
+            <td>{{ e.ambito }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="msg-vacio">No hay registros en el catálogo de entes.</p>
+      {% endif %}
+    </div>
+
+    <div class="tab-content" id="tab-municipios">
+      {% if municipios %}
+      <table class="tabla-resultados">
+        <thead>
+          <tr>
+            <th>Clave</th>
+            <th>Nombre</th>
+            <th>Siglas</th>
+            <th>Clasificación</th>
+            <th>Ámbito</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in municipios %}
+          <tr>
+            <td>{{ m.clave }}</td>
+            <td>{{ m.nombre }}</td>
+            <td>{{ m.siglas or '-' }}</td>
+            <td>{{ m.clasificacion or '-' }}</td>
+            <td>{{ m.ambito }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="msg-vacio">No hay registros en el catálogo de municipios.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const tabs = document.querySelectorAll(".tab");
+  const contents = document.querySelectorAll(".tab-content");
+
+  tabs.forEach(tab => {
+    tab.addEventListener("click", () => {
+      tabs.forEach(t => t.classList.remove("active"));
+      contents.forEach(c => c.classList.remove("active"));
+      tab.classList.add("active");
+      document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
+    });
+  });
+});
+</script>
+
+<style>
+.tabs-container { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); box-shadow: var(--shadow-sm); padding: 1rem; }
+.tabs { display: flex; gap: 0.5rem; border-bottom: 1px solid var(--color-border); margin-bottom: 1rem; }
+.tab { background: var(--color-bg); border: none; padding: 0.7rem 1.2rem; cursor: pointer; border-radius: var(--radius) var(--radius) 0 0; font-weight: 600; color: var(--color-muted); transition: var(--transition); }
+.tab.active { background: var(--color-surface); color: var(--color-primary); border-bottom: 2px solid var(--color-primary); }
+.tab:hover { color: var(--color-accent); }
+.tab-content { display: none; animation: fadeIn 0.3s ease; }
+.tab-content.active { display: block; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+{% endblock %}
+

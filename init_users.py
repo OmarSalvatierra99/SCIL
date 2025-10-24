@@ -1,6 +1,6 @@
 # ===========================================================
 # init_users.py — SCIL QNA 2025 / Inicializador de usuarios
-# Crea usuarios con contraseñas simples (solo para pruebas)
+# Relaciona usuarios con claves únicas reales de ENTES
 # ===========================================================
 
 import sqlite3
@@ -12,11 +12,25 @@ def hash_password(password: str) -> str:
     """Genera hash SHA256 de una contraseña."""
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
+def mapear_siglas_a_claves(conn, siglas_csv):
+    """Convierte lista de siglas a claves reales según tabla ENTES."""
+    cur = conn.cursor()
+    claves = []
+    faltantes = []
+    for sigla in [s.strip().upper() for s in siglas_csv.split(",") if s.strip()]:
+        row = cur.execute("SELECT clave FROM entes WHERE UPPER(siglas)=?", (sigla,)).fetchone()
+        if row:
+            claves.append(row["clave"])
+        else:
+            faltantes.append(sigla)
+    return ",".join(claves), faltantes
+
 def run():
     conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
-    # Asegurar existencia de tabla usuarios
+    # Asegurar tabla usuarios
     cur.execute("""
         CREATE TABLE IF NOT EXISTS usuarios (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -27,7 +41,6 @@ def run():
         )
     """)
 
-    # Borrar usuarios anteriores sin afectar otras tablas
     cur.execute("DELETE FROM usuarios")
 
     TODOS_LOS_ENTES = (
@@ -78,20 +91,20 @@ def run():
     ]
 
     for u in usuarios:
-        clave_hash = hash_password(u["clave"])
+        claves, faltantes = mapear_siglas_a_claves(conn, u["entes"])
+        if faltantes:
+            print(f"⚠️ Usuario {u['usuario']} tiene siglas sin correspondencia: {faltantes}")
         cur.execute("""
             INSERT INTO usuarios (nombre, usuario, clave, entes)
             VALUES (?, ?, ?, ?)
-        """, (u["nombre"], u["usuario"], clave_hash, u["entes"]))
+        """, (u["nombre"], u["usuario"], hash_password(u["clave"]), claves))
 
     conn.commit()
     conn.close()
 
-    print("✅ Usuarios creados correctamente:\n")
+    print("\n✅ Usuarios creados con claves de entes correctas:\n")
     for u in usuarios:
-        print(f"  • {u['usuario']} ({u['nombre']})")
-        print(f"    Clave: {u['clave']}")
-        print(f"    Entes: {u['entes'][:70]}...\n")
+        print(f"  • {u['usuario']} ({u['nombre']}) — Clave: {u['clave']}")
 
 if __name__ == "__main__":
     run()

@@ -1,62 +1,46 @@
 {% extends "base.html" %}
-{% block title %}Resultados Generales{% endblock %}
+{% block title %}Resultados por Ente - SASP{% endblock %}
 
 {% block content %}
 <div class="report-container">
-  <h2>Reporte por Ente</h2>
+  <h2>Resultados Agrupados por Ente</h2>
 
   {% if resultados %}
-    {% for ente, registros in resultados.items() %}
-      <div class="ente-bloque">
-        <div class="ente-nombre">{{ ente }}</div>
-        <table class="tabla-resultados">
-          <thead>
-            <tr>
-              <th>RFC</th>
-              <th>Nombre</th>
-              <th>Puesto</th>
-              <th>Entes con Incompatibilidad</th>
-              <th>Solventado</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for r in registros %}
-              {% set editable = false %}
-              {% set entes_usuario = session.get('entes', []) %}
-              {% set entes_registro = r.entes if r.entes is defined else (r.incompatibles or []) %}
-              {% for eu in entes_usuario %}
-                {% for er in entes_registro %}
-                  {% if eu|trim|upper in er|trim|upper or eu|trim|upper == 'TODOS' %}
-                    {% set editable = true %}
-                  {% endif %}
-                {% endfor %}
-              {% endfor %}
-
-              <tr>
-                <td><a href="{{ url_for('resultados_por_rfc', rfc=r.rfc) }}" class="link-rfc">{{ r.rfc }}</a></td>
-                <td>{{ r.nombre }}</td>
-                <td>{{ r.puesto }}</td>
-                <td>{{ (r.entes or r.incompatibles)|join(', ') }}</td>
-                <td>
-                  {% if editable %}
-                    <label class="switch">
-                      <input type="checkbox"
-                             {% if r.estado == 'Solventado' %}checked{% endif %}
-                             onchange="window.location.href='{{ url_for('solventacion_detalle', rfc=r.rfc) }}'">
-                      <span class="slider"></span>
-                    </label>
-                  {% else %}
-                    <span style="color:#888;">Bloqueado</span>
-                  {% endif %}
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+    {% for ente, lista in resultados.items() %}
+    <div class="ente-bloque">
+      <div class="ente-nombre">{{ ente }}</div>
+      <table class="tabla-resultados">
+        <thead>
+          <tr>
+            <th>RFC</th>
+            <th>Nombre</th>
+            <th>Descripción</th>
+            <th>Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in lista %}
+          <tr>
+            <td>
+              {% if r.rfc %}
+              <a href="{{ url_for('resultados_por_rfc', rfc=r.rfc) }}" class="link-rfc">
+                {{ r.rfc }}
+              </a>
+              {% else %}
+                Sin RFC
+              {% endif %}
+            </td>
+            <td>{{ r.nombre or 'Sin nombre' }}</td>
+            <td>{{ r.descripcion or 'Sin descripción' }}</td>
+            <td>{{ r.estado or 'Sin estado' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
     {% endfor %}
   {% else %}
-    <div class="msg-vacio">No hay resultados disponibles.</div>
+  <p class="msg-vacio">No hay resultados para mostrar.</p>
   {% endif %}
 </div>
 {% endblock %}

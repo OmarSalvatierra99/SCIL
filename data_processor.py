@@ -1,17 +1,20 @@
 # ===========================================================
 # data_processor.py — SCIL QNA 2025 / Auditoría Laboral por Quincenas
-# Versión optimizada: análisis en memoria, encabezados estándar
+# Versión integrada con claves ENTE_##### desde el catálogo oficial
 # ===========================================================
 
 import pandas as pd
 import re
 from datetime import datetime, date
 from collections import defaultdict
+from database import DatabaseManager
 
 
 class DataProcessor:
     def __init__(self):
         self.column_cache = {}
+        self.db = DatabaseManager("scil.db")
+        self.mapa_siglas = self.db.get_mapa_siglas()  # {'CEAS': 'ENTE_49806', ...}
 
     # ----------------------------------------------------
     # LIMPIEZA / NORMALIZACIÓN
@@ -33,13 +36,24 @@ class DataProcessor:
         f = pd.to_datetime(s, errors="coerce", dayfirst=False)
         return f.strftime("%Y-%m-%d") if not pd.isna(f) else None
 
+    def normalizar_ente_clave(self, etiqueta):
+        """Convierte sigla/nombre/clave detectada en el Excel a ENTE_#####."""
+        if not etiqueta:
+            return None
+        val = str(etiqueta).strip().upper()
+        # Buscar en mapa de siglas
+        if val in self.mapa_siglas:
+            return self.mapa_siglas[val]
+        # Buscar por nombre o clave directamente
+        return self.db.normalizar_ente_clave(val, self.mapa_siglas)
+
     # ----------------------------------------------------
     # PROCESAMIENTO PRINCIPAL
     # ----------------------------------------------------
     def procesar_archivos(self, fileobjs, from_memory=False):
         """
         Procesa uno o varios archivos Excel directamente desde memoria (BytesIO).
-        Cada hoja representa un ENTE. 
+        Cada hoja representa un ENTE.
         Analiza columnas RFC, NOMBRE, PUESTO, FECHA_ALTA, FECHA_BAJA, QNA1–QNA12, TOT_NETO.
         """
         print("📊 Procesando archivos laborales...")
@@ -52,7 +66,12 @@ class DataProcessor:
             xl = pd.ExcelFile(f)
 
             for sheet in xl.sheet_names:
-                ente_label = sheet.strip().upper()  # El nombre de la hoja es el ENTE
+                ente_label = sheet.strip().upper()  # El nombre de la hoja es el ENTE o sigla
+                clave_ente = self.normalizar_ente_clave(ente_label)
+                if not clave_ente:
+                    print(f"⚠️  Hoja {ente_label} omitida (no coincide con ningún ente registrado).")
+                    continue
+
                 df = xl.parse(sheet).rename(columns=lambda x: str(x).strip().upper().replace(" ", "_"))
 
                 columnas_necesarias = {"RFC", "NOMBRE", "PUESTO", "FECHA_ALTA", "FECHA_BAJA"}
@@ -73,7 +92,7 @@ class DataProcessor:
                         continue
 
                     entes_rfc[rfc].append({
-                        "ente": ente_label,
+                        "ente": clave_ente,  # ← usamos la CLAVE
                         "nombre": str(row.get("NOMBRE", "")).strip(),
                         "puesto": str(row.get("PUESTO", "")).strip(),
                         "fecha_ingreso": self.limpiar_fecha(row.get("FECHA_ALTA")),
@@ -83,7 +102,7 @@ class DataProcessor:
                     })
                     validos += 1
 
-                print(f"   → {ente_label}: {validos} registros válidos")
+                print(f"   → {ente_label} ({clave_ente}): {validos} registros válidos")
 
         resultados = self._cruces_quincenales(entes_rfc)
         print(f"📈 {len(resultados)} cruces detectados.")
@@ -104,7 +123,6 @@ class DataProcessor:
             if len(registros) < 2:
                 continue
 
-            # Detectar quincenas activas entre entes
             qnas_presentes = sorted({q for r in registros for q, v in r["qnas"].items() if self._es_activo(v)})
             if not qnas_presentes:
                 continue
@@ -116,7 +134,7 @@ class DataProcessor:
                     hallazgos.append({
                         "rfc": rfc,
                         "nombre": activos[0].get("nombre", ""),
-                        "entes": entes_activos,
+                        "entes": entes_activos,  # ← todas CLAVES ENTE_#####
                         "fecha_comun": qna,
                         "tipo_patron": "CRUCE_ENTRE_ENTES_QNA",
                         "descripcion": f"El trabajador tiene registros activos en la quincena {qna} en más de un ente.",

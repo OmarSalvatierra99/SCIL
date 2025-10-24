@@ -1,352 +1,232 @@
 # ===========================================================
-# app.py — SCIL QNA 2025 / Sistema de Auditoría de Servicios Personales
+# app.py — SCIL / SASP 2025
+# Sistema de Auditoría de Servicios Personales
+# Integrado con catálogos de ENTES y MUNICIPIOS
 # ===========================================================
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_file
-from werkzeug.utils import secure_filename
-from database import DatabaseManager
-from data_processor import DataProcessor
-from io import BytesIO
-from math import ceil
-from openpyxl import Workbook
+from flask import (
+    Flask, render_template, request, redirect,
+    url_for, session, jsonify, send_file
+)
+import os
+import pandas as pd
 from datetime import datetime
-import os, re
+from io import BytesIO
+from database import DatabaseManager
 
 # -----------------------------------------------------------
-# Configuración general
+# Configuración básica
 # -----------------------------------------------------------
 app = Flask(__name__)
-app.secret_key = os.environ.get("SCIL_SECRET", "scil_tlax_2025")
-
-db_manager = DatabaseManager()
+app.secret_key = "ofs_sasp_2025"
+db_manager = DatabaseManager("scil.db")
 
 # -----------------------------------------------------------
-# Utilidades
+# Utilidades simples
 # -----------------------------------------------------------
-def formato_fecha(fecha):
-    if not fecha:
-        return ""
-    try:
-        if isinstance(fecha, datetime):
-            return fecha.strftime("%d/%m/%Y")
-        return str(fecha)
-    except Exception:
-        return str(fecha)
-
-
-def formato_moneda(valor):
-    try:
-        return "${:,.2f}".format(float(valor))
-    except Exception:
-        return valor or ""
-
-
 def _sanitize_text(s):
-    return re.sub(r"\s+", "", s.upper()) if s else ""
-
-
-def _limpiar_nombre_ente(ente):
-    if not ente:
+    if not s:
         return ""
-    partes = re.split(r"[_.]", ente)
-    for p in reversed(partes):
-        if len(p) >= 3 and not p.lower().endswith(("xlsx", "xls")):
-            return p.upper()
-    return ente.upper()
+    return str(s).strip().upper().replace("Á","A").replace("É","E").replace("Í","I").replace("Ó","O").replace("Ú","U")
 
-
-def _allowed_all(entes):
-    return any(_sanitize_text(x) in {"ALL", "TODOS"} for x in (entes or []))
-
-
-def _qna_labels(qnas_dict):
-    if not qnas_dict:
-        return ""
-    qnas = list(qnas_dict.keys())
-    try:
-        ordenadas = sorted(qnas, key=lambda k: int(re.sub(r"\D", "", k)))
-    except Exception:
-        ordenadas = sorted(qnas)
-    if len(ordenadas) == 12:
-        return "Activo todo el periodo"
-    return ", ".join(
-        [f"Quincena {int(re.sub(r'\\D', '', k))}" for k in ordenadas if re.search(r"\d+", k)]
-    )
+def _allowed_all(entes_usuario):
+    return any(_sanitize_text(e) == "TODOS" for e in entes_usuario)
 
 # -----------------------------------------------------------
-# Login / Logout / Dashboard
+# Rutas de autenticación
 # -----------------------------------------------------------
 @app.route("/", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        usuario = request.form.get("usuario")
-        clave = request.form.get("clave")
-        datos = db_manager.get_usuario(usuario, clave)
-        if datos:
-            entes_data = datos["entes"]
-            # Acepta lista o texto plano
-            if isinstance(entes_data, str):
-                entes_list = [e.strip() for e in entes_data.split(",") if e.strip()]
-            elif isinstance(entes_data, list):
-                entes_list = entes_data
-            else:
-                entes_list = []
-
-            session.update({
-                "autenticado": True,
-                "usuario": usuario,
-                "nombre": datos["nombre"],
-                "entes": entes_list,
-            })
+        usuario = request.form.get("usuario","").strip()
+        clave = request.form.get("clave","").strip()
+        user = db_manager.get_usuario(usuario, clave)
+        if user:
+            session["usuario"] = user["usuario"]
+            session["nombre"] = user["nombre"]
+            session["entes"] = user["entes"]
+            session["autenticado"] = True
             return redirect(url_for("dashboard"))
-        return render_template("login.html", error="Usuario o clave incorrectos")
+        else:
+            return render_template("login.html", error="Credenciales inválidas")
     return render_template("login.html")
-
 
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("login"))
 
-
+# -----------------------------------------------------------
+# Panel principal
+# -----------------------------------------------------------
 @app.route("/dashboard")
 def dashboard():
     if not session.get("autenticado"):
         return redirect(url_for("login"))
-    return render_template("dashboard.html", nombre=session.get("nombre", ""))
+    return render_template("dashboard.html", nombre=session.get("nombre"))
 
 # -----------------------------------------------------------
-# Subida de archivos laborales
+# Carga de archivos Excel
 # -----------------------------------------------------------
-def _get_uploaded_buffers(field_name="files"):
-    files = request.files.getlist(field_name)
-    if not files:
-        return [], "No se recibieron archivos"
-    buffers = []
-    for f in files:
-        if not f.filename.strip():
-            continue
-        data = BytesIO(f.read())
-        data.name = secure_filename(f.filename)
-        buffers.append(data)
-    if not buffers:
-        return [], "No se recibieron archivos válidos (.xlsx)"
-    return buffers, None
-
-
 @app.route("/upload_laboral", methods=["POST"])
 def upload_laboral():
     if not session.get("autenticado"):
         return jsonify({"error": "No autorizado"}), 403
 
-    buffers, err = _get_uploaded_buffers("files")
-    if err:
-        return jsonify({"error": err}), 400
+    files = request.files.getlist("files")
+    if not files:
+        return jsonify({"error": "No se enviaron archivos"})
 
-    processor = DataProcessor()
-    resultados = processor.procesar_archivos(buffers, from_memory=True)
-
-    nuevos, repetidos, _ = db_manager.comparar_con_historico(resultados, "laboral")
-    db_manager.guardar_resultados(nuevos, "laboral")
-
+    total_resultados, nuevos = 0, 0
+    for f in files:
+        nombre_archivo = f.filename
+        try:
+            df = pd.read_excel(f)
+            resultados = []
+            for _, row in df.iterrows():
+                rfc = str(row.get("RFC","")).strip().upper()
+                nombre = str(row.get("NOMBRE","")).strip()
+                ente = str(row.get("ENTE","")).strip()
+                puesto = str(row.get("PUESTO","")).strip()
+                if not rfc:
+                    continue
+                resultado = {
+                    "rfc": rfc,
+                    "nombre": nombre,
+                    "entes": [ente] if ente else [],
+                    "registros": [{
+                        "ente": ente,
+                        "puesto": puesto,
+                        "monto": row.get("TOTAL", ""),
+                        "qnas": row.get("QUINCENA", ""),
+                        "fecha_ingreso": row.get("FECHA_INGRESO", ""),
+                        "fecha_egreso": row.get("FECHA_EGRESO", "")
+                    }],
+                    "estado": "Pendiente"
+                }
+                resultados.append(resultado)
+            nuevos_res, repetidos, _ = db_manager.comparar_con_historico(resultados)
+            nuevos += db_manager.guardar_resultados(nuevos_res, "laboral", nombre_archivo)
+            total_resultados += len(resultados)
+        except Exception as e:
+            return jsonify({"error": f"Error procesando {nombre_archivo}: {e}"})
     return jsonify({
-        "mensaje": "Archivos procesados correctamente",
-        "total_resultados": len(resultados),
-        "nuevos": len(nuevos)
+        "mensaje": "Procesamiento completado",
+        "total_resultados": total_resultados,
+        "nuevos": nuevos
     })
 
 # -----------------------------------------------------------
-# Reporte por Ente (sin duplicados)
+# Reportes generales — agrupados y ordenados por Ente
 # -----------------------------------------------------------
 @app.route("/resultados")
 def reporte_por_ente():
     if not session.get("autenticado"):
         return redirect(url_for("login"))
 
-    resultados, _ = db_manager.obtener_resultados_paginados("laboral", pagina=1, limite=999999)
-    if not resultados:
-        return render_template("resultados.html", resultados={})
-
+    resultados, _ = db_manager.obtener_resultados_paginados("laboral", None, 1, 10000)
     entes_usuario = session.get("entes", [])
-    if not _allowed_all(entes_usuario) and entes_usuario:
-        resultados = [
-            r for r in resultados
-            if any(e for e in (r.get("entes") or [])
-                   if any(_sanitize_text(x) in _sanitize_text(e) for x in entes_usuario))
-        ]
-
-    # Agrupar por ente sin duplicar
-    reporte = {}
-    filas_vistas = set()
+    agrupado = {}
 
     for r in resultados:
-        for ente in r.get("entes", []):
-            ente_nom = _limpiar_nombre_ente(ente)
-            if ente_nom not in reporte:
-                reporte[ente_nom] = []
+        for e in r.get("entes", []) or ["Sin Ente"]:
+            ente_nom = db_manager.normalizar_ente(e) or e
+            if _allowed_all(entes_usuario) or any(_sanitize_text(eu) in _sanitize_text(e) or _sanitize_text(eu) in _sanitize_text(ente_nom) for eu in entes_usuario):
+                agrupado.setdefault(ente_nom, []).append(r)
 
-            for reg in r.get("registros", []):
-                clave = (r["rfc"], r.get("nombre"), reg.get("puesto"), ente_nom)
-                if clave in filas_vistas:
-                    continue
-                filas_vistas.add(clave)
+    if not agrupado:
+        return render_template("empty.html", tipo="ente", mensaje="Sin registros del ente asignado.")
 
-                reporte[ente_nom].append({
-                    "rfc": r["rfc"],
-                    "nombre": r.get("nombre", ""),
-                    "puesto": reg.get("puesto", ""),
-                    "incompatibles": sorted(r.get("entes", [])),
-                    "estado": r.get("estado", ""),
-                    "ente": ente_nom
-                })
-
-    return render_template("resultados.html", resultados=reporte)
+    agrupado_ordenado = dict(sorted(agrupado.items(), key=lambda x: x[0].upper()))
+    return render_template("resultados.html", resultados=agrupado_ordenado)
 
 # -----------------------------------------------------------
-# Detalle por RFC (trabajador)
+# Detalle por RFC
 # -----------------------------------------------------------
-@app.route("/resultados/rfc/<rfc>")
+@app.route("/resultados/<rfc>")
 def resultados_por_rfc(rfc):
     if not session.get("autenticado"):
         return redirect(url_for("login"))
-
-    if not re.match(r"^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{2,3}$", rfc.upper()):
-        return render_template("empty.html", tipo="ente", mensaje=f"'{rfc}' no es un RFC válido")
-
-    info = db_manager.obtener_resultados_por_rfc(rfc.upper())
+    info = db_manager.obtener_resultados_por_rfc(rfc)
     if not info:
-        return render_template("empty.html", tipo="persona", mensaje=f"No se encontraron registros para {rfc}")
-
-    vistos = set()
-    registros_unicos = []
-    for reg in info.get("registros", []):
-        clave = (reg.get("ente"), reg.get("puesto"), reg.get("fecha_ingreso"))
-        if clave in vistos:
-            continue
-        vistos.add(clave)
-        reg["fecha_ingreso"] = formato_fecha(reg.get("fecha_ingreso"))
-        reg["fecha_egreso"] = formato_fecha(reg.get("fecha_egreso"))
-        reg["monto"] = formato_moneda(reg.get("monto"))
-        reg["qnas"] = _qna_labels(reg.get("qnas", {}))
-        registros_unicos.append(reg)
-    info["registros"] = registros_unicos
-
-    return render_template("detalle_rfc.html", rfc=rfc.upper(), info=info)
+        return render_template("empty.html", tipo="rfc", mensaje="No hay registros del trabajador.")
+    return render_template("detalle_rfc.html", rfc=rfc, info=info)
 
 # -----------------------------------------------------------
-# Exportar a Excel
+# Solventación
 # -----------------------------------------------------------
-@app.route("/exportar/laboral")
-def exportar_laboral():
-    if not session.get("autenticado"):
-        return redirect(url_for("login"))
-
-    resultados, _ = db_manager.obtener_resultados_paginados("laboral", pagina=1, limite=999999)
-    filas, vistos = [], set()
-
-    for r in resultados:
-        rfc = r.get("rfc", "")
-        nombre = r.get("nombre", "")
-        entes = sorted(list({_limpiar_nombre_ente(e) for e in (r.get("entes") or []) if e}))
-        while len(entes) < 2:
-            entes.append("")
-
-        for reg in r.get("registros", []):
-            qnas = _qna_labels(reg.get("qnas", {}))
-            fila = [
-                rfc, nombre, entes[0], entes[1],
-                reg.get("puesto", ""), reg.get("fecha_ingreso", ""),
-                reg.get("fecha_egreso", ""), reg.get("monto", ""), qnas
-            ]
-            clave = tuple(map(str, fila))
-            if clave in vistos:
-                continue
-            vistos.add(clave)
-            filas.append(fila)
-
-    if not filas:
-        return jsonify({"error": "No hay datos para exportar"}), 404
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Laborales"
-    ws.append(["RFC", "Nombre", "Ente 1", "Ente 2", "Puesto", "Fecha Alta", "Fecha Baja", "Monto", "Cruce Quincenas"])
-    for f in filas:
-        ws.append(f)
-
-    for col in ws.columns:
-        width = min(max(len(str(c.value)) if c.value else 0 for c in col) + 2, 50)
-        ws.column_dimensions[col[0].column_letter].width = width
-
-    out = BytesIO()
-    wb.save(out)
-    out.seek(0)
-    filename = f"SCIL_Laborales_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-    return send_file(
-        out,
-        as_attachment=True,
-        download_name=filename,
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
 @app.route("/solventacion/<rfc>")
 def solventacion_detalle(rfc):
     if not session.get("autenticado"):
         return redirect(url_for("login"))
-    info = db_manager.obtener_resultados_por_rfc(rfc.upper())
-    solventacion_texto = info.get("solventacion", "") if info else ""
-    return render_template("solventacion.html", rfc=rfc.upper(), solventacion=solventacion_texto)
+    info = db_manager.obtener_resultados_por_rfc(rfc)
+    return render_template("solventacion.html", rfc=rfc, solventacion=info.get("solventacion",""))
 
-# -----------------------------------------------------------
-# Actualizar estado de solventación (solo entes autorizados)
-# -----------------------------------------------------------
 @app.route("/actualizar_estado", methods=["POST"])
 def actualizar_estado():
     if not session.get("autenticado"):
         return jsonify({"error": "No autorizado"}), 403
-
     data = request.get_json(silent=True) or {}
-    rfc = (data.get("rfc") or "").upper()
-    nuevo_estado = data.get("estado", "Solventado")
-    solventacion = data.get("solventacion", "").strip()
-
-    if not rfc:
-        return jsonify({"error": "RFC faltante"}), 400
-
-    # --- validar acceso del usuario ---
-    entes_usuario = session.get("entes", [])
-    info = db_manager.obtener_resultados_por_rfc(rfc)
-    if not info:
-        return jsonify({"error": "RFC no encontrado"}), 404
-
-    # Verificar si al menos uno de los entes del registro pertenece al usuario
-    entes_registro = [e.upper() for e in info.get("entes", [])]
-    puede_editar = any(
-        _sanitize_text(eu) in _sanitize_text(er)
-        for eu in entes_usuario for er in entes_registro
-    ) or _allowed_all(entes_usuario)
-
-    if not puede_editar:
-        return jsonify({"error": "Sin permiso para editar este registro"}), 403
-
-    # --- actualizar en base de datos ---
+    rfc = data.get("rfc")
+    estado = data.get("estado", "Solventado")
+    solventacion = data.get("solventacion", "")
     try:
-        db_manager.actualizar_solventacion(rfc, nuevo_estado, solventacion)
-        return jsonify({"mensaje": "Solventación actualizada correctamente"})
+        filas = db_manager.actualizar_solventacion(rfc, estado, solventacion)
+        return jsonify({"mensaje": f"Actualizado ({filas} filas)"})
     except Exception as e:
-        return jsonify({"error": f"Error al guardar: {e}"}), 500
+        return jsonify({"error": str(e)}), 500
 
+# -----------------------------------------------------------
+# Descarga en Excel
+# -----------------------------------------------------------
+@app.route("/exportar")
+def exportar_excel():
+    if not session.get("autenticado"):
+        return redirect(url_for("login"))
+    resultados, _ = db_manager.obtener_resultados_paginados("laboral", None, 1, 10000)
+    rows = []
+    for r in resultados:
+        for reg in (r.get("registros") or []):
+            rows.append({
+                "RFC": r.get("rfc"),
+                "Nombre": r.get("nombre"),
+                "Ente": ", ".join(r.get("entes", [])),
+                "Puesto": reg.get("puesto"),
+                "Monto": reg.get("monto"),
+                "Quincenas": reg.get("qnas"),
+                "Estado": r.get("estado")
+            })
+    df = pd.DataFrame(rows)
+    output = BytesIO()
+    df.to_excel(output, index=False)
+    output.seek(0)
+    return send_file(output, download_name="reporte.xlsx", as_attachment=True)
 
-# Hacer disponible la función en las plantillas Jinja
+# -----------------------------------------------------------
+# Catálogos de ENTES y MUNICIPIOS (solo consulta)
+# -----------------------------------------------------------
+@app.route("/catalogos")
+def catalogos_home():
+    if not session.get("autenticado"):
+        return redirect(url_for("login"))
+    entes = db_manager.listar_entes()
+    municipios = db_manager.listar_municipios()
+    return render_template("catalogos.html", entes=entes, municipios=municipios)
+
+# -----------------------------------------------------------
+# Context Processor
+# -----------------------------------------------------------
 @app.context_processor
-def utility_processor():
-    return dict(_sanitize_text=_sanitize_text)
-
+def inject_helpers():
+    return {
+        "_sanitize_text": _sanitize_text,
+        "db_manager": db_manager
+    }
 
 # -----------------------------------------------------------
 # Main
 # -----------------------------------------------------------
 if __name__ == "__main__":
-    print("🚀 Iniciando SCIL QNA 2025...")
-    app.run(host="0.0.0.0", port=4050, debug=True)
+    port = int(os.environ.get("PORT", 4050))
+    app.run(host="0.0.0.0", port=port, debug=True)
 

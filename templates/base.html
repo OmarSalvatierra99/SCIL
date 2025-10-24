@@ -32,6 +32,9 @@
         <a href="{{ url_for('reporte_por_ente') }}"
            class="nav-link {% if request.endpoint == 'reporte_por_ente' %}active{% endif %}">Resultados</a>
 
+        <a href="{{ url_for('catalogos_home') }}"
+           class="nav-link {% if request.endpoint == 'catalogos_home' %}active{% endif %}">Catálogos</a>
+
         <a href="{{ url_for('logout') }}" class="nav-link">Salir</a>
       </div>
     </div>

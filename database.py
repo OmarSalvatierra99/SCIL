@@ -1,293 +1,290 @@
 # ===========================================================
-# database.py — SCIL QNA 2025 / Gestor de Base de Datos Auditor
-# Compatible con procesamiento en memoria (tabla laboral)
+# database.py — SCIL / SASP 2025
+# Manejador central de base de datos SQLite
 # ===========================================================
 
 import sqlite3
 import json
 import hashlib
-import threading
-
 
 class DatabaseManager:
-    def __init__(self, db_path='scil.db'):
+    def __init__(self, db_path="scil.db"):
         self.db_path = db_path
-        self._local = threading.local()
-        self._initialized = False
-        self.init_db()
+        self._init_db()
 
     # -------------------------------------------------------
-    # Conexión y configuración
+    # Conexión
     # -------------------------------------------------------
-    def get_connection(self):
-        if not hasattr(self._local, 'conn'):
-            conn = sqlite3.connect(self.db_path, check_same_thread=False)
-            conn.row_factory = sqlite3.Row
-            try:
-                conn.execute("PRAGMA journal_mode=WAL;")
-                conn.execute("PRAGMA synchronous=NORMAL;")
-                conn.execute("PRAGMA foreign_keys=ON;")
-            except Exception:
-                pass
-            self._local.conn = conn
-        return self._local.conn
+    def _connect(self):
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
 
-    def init_db(self):
-        conn = self.get_connection()
+    # -------------------------------------------------------
+    # Inicialización
+    # -------------------------------------------------------
+    def _init_db(self):
+        conn = self._connect()
         cur = conn.cursor()
-        cur.executescript("""
+
+        # Tabla laboral
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS laboral (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                tipo_analisis TEXT NOT NULL,
-                rfc TEXT NOT NULL,
-                datos TEXT NOT NULL,
                 hash_firma TEXT UNIQUE,
-                fecha_analisis TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
+                datos TEXT NOT NULL,
+                creado TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
 
-            CREATE TABLE IF NOT EXISTS archivos_procesados (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                nombre_archivo TEXT NOT NULL,
-                tipo_analisis TEXT,
-                total_registros INTEGER,
-                fecha_procesamiento TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-
+        # Usuarios
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS usuarios (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 nombre TEXT NOT NULL,
                 usuario TEXT UNIQUE NOT NULL,
-                clave TEXT NOT NULL,           
-                entes TEXT NOT NULL            
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_tipo_lab ON laboral(tipo_analisis);
-            CREATE INDEX IF NOT EXISTS idx_rfc_lab ON laboral(rfc);
-            CREATE INDEX IF NOT EXISTS idx_hash_lab ON laboral(hash_firma);
+                clave TEXT NOT NULL,
+                entes TEXT NOT NULL
+            )
         """)
+
+        # Catálogo de entes
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS entes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                clave TEXT UNIQUE NOT NULL,
+                nombre TEXT NOT NULL,
+                siglas TEXT,
+                clasificacion TEXT,
+                ambito TEXT,
+                activo INTEGER NOT NULL DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Catálogo de municipios
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS municipios (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                clave TEXT UNIQUE NOT NULL,
+                nombre TEXT NOT NULL,
+                siglas TEXT,
+                clasificacion TEXT,
+                ambito TEXT DEFAULT 'MUNICIPAL',
+                activo INTEGER NOT NULL DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         conn.commit()
-        self._initialized = True
-        print("✅ Base de datos inicializada (modo temporal: scil.db)")
+        conn.close()
+        print("✅ Base de datos inicializada (modo scil.db)")
 
     # -------------------------------------------------------
     # Utilidades internas
     # -------------------------------------------------------
-    @staticmethod
-    def _safe_json_loads(x):
-        if x is None:
-            return None
-        if isinstance(x, (dict, list)):
-            return x
-        if isinstance(x, (bytes, bytearray)):
-            try:
-                x = x.decode('utf-8', errors='ignore')
-            except Exception:
-                return None
-        if isinstance(x, str):
-            x = x.strip()
-            if not x:
-                return None
-            try:
-                return json.loads(x)
-            except Exception:
-                return None
-        return None
+    def _hash_text(self, text):
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    def _sanitize(self, s):
+        if not s:
+            return ""
+        return str(s).strip().upper().replace("Á","A").replace("É","E").replace("Í","I").replace("Ó","O").replace("Ú","U")
 
     # -------------------------------------------------------
-    # Gestión de usuarios
+    # Usuarios
     # -------------------------------------------------------
     def get_usuario(self, usuario, clave):
-        if not usuario or not clave:
-            return None
-        conn = self.get_connection()
+        conn = self._connect()
         cur = conn.cursor()
-        clave_hash = hashlib.sha256(clave.encode('utf-8')).hexdigest()
-        cur.execute("SELECT * FROM usuarios WHERE usuario=? AND clave=?", (usuario, clave_hash))
+        clave_hash = hashlib.sha256(clave.encode("utf-8")).hexdigest()
+        cur.execute("""
+            SELECT nombre, usuario, entes
+            FROM usuarios
+            WHERE usuario=? AND clave=?
+        """, (usuario, clave_hash))
         row = cur.fetchone()
+        conn.close()
         if not row:
             return None
+        return {
+            "nombre": row["nombre"],
+            "usuario": row["usuario"],
+            "entes": [x.strip() for x in row["entes"].split(",") if x.strip()]
+        }
 
-        data = dict(row)
-        entes = [e.strip().upper() for e in (data.get("entes") or "").split(",") if e.strip()]
-        if len(entes) > 40 or "*" in entes:
-            entes = []
-        data["entes"] = entes
+    # -------------------------------------------------------
+    # Catálogos
+    # -------------------------------------------------------
+    def listar_entes(self, solo_activos=True):
+        conn = self._connect()
+        cur = conn.cursor()
+        q = "SELECT clave, nombre, siglas, clasificacion, ambito FROM entes"
+        if solo_activos:
+            q += " WHERE activo=1"
+        q += " ORDER BY nombre ASC"
+        cur.execute(q)
+        data = [dict(r) for r in cur.fetchall()]
+        conn.close()
         return data
 
-    # -------------------------------------------------------
-    # Comparación y guardado de resultados
-    # -------------------------------------------------------
-    def comparar_con_historico(self, nuevos_resultados, tipo_analisis='laboral'):
-        conn = self.get_connection()
+    def listar_municipios(self):
+        conn = self._connect()
         cur = conn.cursor()
-        cur.execute("SELECT hash_firma FROM laboral WHERE tipo_analisis=?", (tipo_analisis,))
-        antiguos = {r['hash_firma'] for r in cur.fetchall()}
+        cur.execute("""
+            SELECT clave, nombre, siglas, clasificacion, ambito
+            FROM municipios
+            WHERE activo=1
+            ORDER BY nombre ASC
+        """)
+        data = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return data
 
-        nuevos_unicos, repetidos, nuevos_hash = [], [], set()
-        for res in nuevos_resultados:
-            firma = hashlib.sha256(
-                f"{res.get('rfc','')}_{res.get('tipo_patron','')}_{res.get('descripcion','')}_{tipo_analisis}".encode('utf-8')
-            ).hexdigest()
-            res['hash_firma'] = firma
-            if firma in antiguos:
-                repetidos.append(res)
+    def get_mapa_siglas(self):
+        """Devuelve {'SIGLA': 'ENTE_#####'} para búsqueda rápida."""
+        conn = self._connect()
+        cur = conn.cursor()
+        cur.execute("SELECT siglas, clave FROM entes WHERE activo=1")
+        mapa = {}
+        for sigla, clave in cur.fetchall():
+            if sigla:
+                mapa[self._sanitize(sigla)] = clave
+        conn.close()
+        return mapa
+
+    # -------------------------------------------------------
+    # Normalización de entes
+    # -------------------------------------------------------
+    def normalizar_ente(self, valor):
+        """Devuelve nombre del ente según su sigla o clave."""
+        if not valor:
+            return None
+        conn = self._connect()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT nombre FROM entes
+            WHERE UPPER(siglas)=UPPER(?) OR UPPER(clave)=UPPER(?)
+            LIMIT 1
+        """, (valor, valor))
+        row = cur.fetchone()
+        conn.close()
+        return row[0] if row else None
+
+    def normalizar_ente_clave(self, valor, mapa_siglas=None):
+        """Convierte sigla o nombre a clave ENTE_#####."""
+        if not valor:
+            return None
+        val = self._sanitize(valor)
+        if mapa_siglas and val in mapa_siglas:
+            return mapa_siglas[val]
+
+        conn = self._connect()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT clave FROM entes
+            WHERE UPPER(siglas)=? OR UPPER(nombre)=? OR UPPER(clave)=?
+            LIMIT 1
+        """, (val, val, val))
+        row = cur.fetchone()
+        conn.close()
+        return row[0] if row else None
+
+    # -------------------------------------------------------
+    # Resultados laborales
+    # -------------------------------------------------------
+    def comparar_con_historico(self, nuevos):
+        conn = self._connect()
+        cur = conn.cursor()
+        cur.execute("SELECT hash_firma FROM laboral")
+        existentes = {r[0] for r in cur.fetchall()}
+
+        nuevos_validos, repetidos = [], []
+        for r in nuevos:
+            texto = json.dumps(r, sort_keys=True, ensure_ascii=False)
+            h = self._hash_text(texto)
+            if h not in existentes:
+                r["hash_firma"] = h
+                nuevos_validos.append(r)
             else:
-                nuevos_unicos.append(res)
-            nuevos_hash.add(firma)
+                repetidos.append(r)
+        conn.close()
+        return nuevos_validos, repetidos, len(repetidos)
 
-        print(f"🔍 Comparación QNA: {len(nuevos_unicos)} nuevos, {len(repetidos)} repetidos.")
-        return nuevos_unicos, repetidos, []
-
-    def guardar_resultados(self, resultados, tipo_analisis='laboral', nombre_archivo=None):
-        if not resultados:
-            return 0
-        conn = self.get_connection()
+    def guardar_resultados(self, resultados, tabla, archivo):
+        conn = self._connect()
         cur = conn.cursor()
-        nuevos = 0
-        cur.execute('BEGIN TRANSACTION')
-        try:
-            for res in resultados:
-                firma = res.get('hash_firma') or hashlib.sha256(
-                    f"{res.get('rfc','')}_{res.get('tipo_patron','')}_{res.get('descripcion','')}_{tipo_analisis}".encode('utf-8')
-                ).hexdigest()
-                cur.execute("SELECT 1 FROM laboral WHERE hash_firma=?", (firma,))
-                if cur.fetchone():
-                    continue
+        count = 0
+        for r in resultados:
+            try:
                 cur.execute("""
-                    INSERT INTO laboral (tipo_analisis, rfc, datos, hash_firma)
-                    VALUES (?, ?, ?, ?)
-                """, (tipo_analisis, res.get('rfc',''), json.dumps(res, ensure_ascii=False), firma))
-                nuevos += 1
+                    INSERT INTO laboral (hash_firma, datos)
+                    VALUES (?, ?)
+                """, (r["hash_firma"], json.dumps(r, ensure_ascii=False)))
+                count += 1
+            except sqlite3.IntegrityError:
+                continue
+        conn.commit()
+        conn.close()
+        return count
 
-            if nombre_archivo:
-                cur.execute("""
-                    INSERT INTO archivos_procesados (nombre_archivo, tipo_analisis, total_registros)
-                    VALUES (?, ?, ?)
-                """, (nombre_archivo, tipo_analisis, len(resultados)))
-
-            conn.commit()
-            print(f"💾 {nuevos} resultados guardados.")
-        except Exception as e:
-            conn.rollback()
-            print(f"❌ Error guardando resultados: {e}")
-            raise
-        return nuevos
-
-     # -------------------------------------------------------
-    # Lectura con paginación (general)
-    # -------------------------------------------------------
-    def obtener_resultados_paginados(self, tipo_analisis=None, busqueda=None, pagina=1, limite=50):
-        conn = self.get_connection()
+    def obtener_resultados_paginados(self, tabla, filtro, pagina, limite):
+        conn = self._connect()
         cur = conn.cursor()
-
-        base = "FROM laboral WHERE 1=1"
-        params = []
-        if tipo_analisis:
-            base += " AND tipo_analisis=?"
-            params.append(tipo_analisis)
-        if busqueda:
-            base += " AND datos LIKE ?"
-            params.append(f"%{busqueda}%")
-
-        cur.execute(f"SELECT COUNT(1) {base}", tuple(params))
-        total = cur.fetchone()[0]
-
-        offset = (pagina - 1) * limite
-        cur.execute(
-            f"SELECT rfc, datos {base} ORDER BY fecha_analisis DESC LIMIT ? OFFSET ?",
-            tuple(params + [limite, offset])
-        )
-        filas = cur.fetchall()
+        cur.execute(f"SELECT datos FROM {tabla} ORDER BY id DESC LIMIT ? OFFSET ?", (limite, (pagina-1)*limite))
+        rows = cur.fetchall()
+        conn.close()
 
         resultados = []
-        for f in filas:
-            d = self._safe_json_loads(f['datos'])
-            if not isinstance(d, dict):
+        for row in rows:
+            try:
+                resultados.append(json.loads(row[0]))
+            except Exception:
                 continue
+        return resultados, len(resultados)
 
-            resultado = {
-                "rfc": f["rfc"],
-                "nombre": d.get("nombre", ""),
-                "entes": d.get("entes", []),
-                "estado": d.get("estado", ""),  # si no existe, queda vacío
-                "registros": d.get("registros", []),
-                "tipo_patron": d.get("tipo_patron", ""),
-                "descripcion": d.get("descripcion", "")
-            }
-
-            resultados.append(resultado)
-
-        return resultados, total
-
-
-    # -------------------------------------------------------
-    # Vistas detalladas — por RFC y por Ente
-    # -------------------------------------------------------
-    def obtener_resultados_por_rfc(self, rfc: str):
-        """Devuelve información detallada de un trabajador por RFC."""
-        if not rfc:
-            return None
-        conn = self.get_connection()
+    def obtener_resultados_por_rfc(self, rfc):
+        conn = self._connect()
         cur = conn.cursor()
         cur.execute("""
             SELECT datos FROM laboral
-            WHERE UPPER(rfc)=?
-        """, (rfc.upper(),))
-        filas = cur.fetchall()
-        if not filas:
+            WHERE json_extract(datos, '$.rfc') = ?
+            ORDER BY id DESC
+        """, (rfc,))
+        rows = cur.fetchall()
+        conn.close()
+        if not rows:
             return None
 
-        nombre = ""
-        entes = set()
-        registros = []
-        for row in filas:
-            d = self._safe_json_loads(row["datos"])
-            if not isinstance(d, dict):
-                continue
-            if d.get("nombre"):
-                nombre = d.get("nombre")
-            for e in (d.get("entes") or []):
-                entes.add(e)
-            for reg in (d.get("registros") or []):
-                if isinstance(reg, dict):
-                    registros.append(reg)
+        resultados = []
+        for row in rows:
+            try:
+                resultados.append(json.loads(row[0]))
+            except Exception:
+                pass
 
-        return {"nombre": nombre, "entes": sorted(entes), "registros": registros}
+        if not resultados:
+            return None
 
-    def obtener_resultados_por_ente(self, ente: str):
-        """Devuelve todos los trabajadores asociados a un ente."""
-        if not ente:
-            return {}
-        needle = ente.upper().strip()
+        return {
+            "rfc": rfc,
+            "nombre": resultados[0].get("nombre", ""),
+            "entes": list({e for r in resultados for e in r.get("entes", [])}),
+            "registros": [reg for r in resultados for reg in r.get("registros", [])],
+            "estado": resultados[-1].get("estado", ""),
+            "solventacion": resultados[-1].get("solventacion", "")
+        }
 
-        conn = self.get_connection()
+    def actualizar_solventacion(self, rfc, estado, solventacion):
+        conn = self._connect()
         cur = conn.cursor()
-        cur.execute("SELECT rfc, datos FROM laboral")
-        filas = cur.fetchall()
-        if not filas:
-            return {}
-
-        resultados_agrupados = {}
-        for row in filas:
-            rfc = (row["rfc"] or "SIN_RFC").upper()
-            d = self._safe_json_loads(row["datos"])
-            if not isinstance(d, dict):
-                continue
-
-            entes = d.get("entes") or []
-            if not any(needle in (e or "").upper() for e in entes):
-                continue
-
-            nombre = d.get("nombre", "")
-            if rfc not in resultados_agrupados:
-                resultados_agrupados[rfc] = {"nombre": nombre, "registros": []}
-
-            for reg in (d.get("registros") or []):
-                if not isinstance(reg, dict):
-                    continue
-                ente_reg = (reg.get("ente") or "").upper()
-                if needle in ente_reg:
-                    resultados_agrupados[rfc]["registros"].append(reg)
-
-        return resultados_agrupados
+        cur.execute("""
+            UPDATE laboral
+            SET datos = json_set(datos, '$.estado', ?, '$.solventacion', ?)
+            WHERE json_extract(datos, '$.rfc') = ?
+        """, (estado, solventacion, rfc))
+        filas = cur.rowcount
+        conn.commit()
+        conn.close()
+        return filas
 

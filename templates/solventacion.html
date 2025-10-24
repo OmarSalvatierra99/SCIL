@@ -5,28 +5,46 @@
 <div class="solventacion-container">
   <h2>Solventación para RFC {{ rfc }}</h2>
 
-  <form id="solventacionForm">
-    <label for="solventacion">Observación o enlace:</label>
-    <textarea id="solventacion" name="solventacion" rows="5" placeholder="Describe o pega el enlace de la solventación">{{ solventacion or '' }}</textarea>
-    <div class="acciones">
-      <button type="submit" class="btn btn-primary">Guardar</button>
-      <a href="{{ url_for('resultados_por_rfc', rfc=rfc) }}" class="btn btn-secondary">Regresar</a>
-    </div>
-  </form>
+  {% if not session.get('autenticado') %}
+    <p class="msg-vacio">No autorizado.</p>
+  {% else %}
+    <form id="solventacionForm">
+      <label for="solventacion">Observación o enlace:</label>
+      <textarea id="solventacion" name="solventacion" rows="5"
+        placeholder="Describe o pega el enlace de la solventación">{{ solventacion or '' }}</textarea>
+
+      <div class="acciones" style="margin-top:1rem;">
+        <button type="submit" class="btn btn-primary">Guardar</button>
+        <a href="{{ url_for('resultados_por_rfc', rfc=rfc) }}" class="btn btn-secondary">Regresar</a>
+      </div>
+    </form>
+  {% endif %}
 </div>
 
 <script>
-document.getElementById('solventacionForm').addEventListener('submit', async e => {
+document.getElementById('solventacionForm')?.addEventListener('submit', async e => {
   e.preventDefault();
+
   const rfc = "{{ rfc }}";
-  const solventacion = document.getElementById('solventacion').value;
+  const solventacion = document.getElementById('solventacion').value.trim();
+  if (!solventacion) {
+    alert("Debes escribir una observación o enlace antes de guardar.");
+    return;
+  }
+
   const res = await fetch('/actualizar_estado', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ rfc, estado: 'Solventado', solventacion })
   });
+
   const data = await res.json();
-  alert(data.mensaje || data.error);
+  if (data.error) {
+    alert("❌ Error: " + data.error);
+  } else {
+    alert("✅ " + (data.mensaje || "Solventación registrada."));
+    window.location.href = "{{ url_for('resultados_por_rfc', rfc=rfc) }}";
+  }
 });
 </script>
 {% endblock %}

@@ -5,13 +5,14 @@
 <div class="detalle-container">
   <div class="detalle-header">
     <p><strong>RFC:</strong> {{ rfc }}</p>
-    <p><strong>Nombre:</strong> {{ info.nombre }}</p>
+    <p><strong>Nombre:</strong> {{ info.nombre or 'Sin nombre' }}</p>
   </div>
 
   <table class="tabla-detalle">
     <thead>
       <tr>
-        <th>Ente Incompatibilidad</th>
+        <th>Clave Ente</th>
+        <th>Nombre del Ente</th>
         <th>Puesto</th>
         <th>Total Percepciones</th>
         <th>Quincenas</th>
@@ -24,22 +25,29 @@
       {% for r in info.registros %}
         {% set editable = false %}
         {% for e in session.get('entes', []) %}
-          {% if _sanitize_text(e) in _sanitize_text(r.ente) or _sanitize_text(e) in _sanitize_text(r.incompatibles|join(',')) or _sanitize_text(e) == 'TODOS' %}
+          {% if _sanitize_text(e) == _sanitize_text(r.ente) or _sanitize_text(e) == 'TODOS' %}
             {% set editable = true %}
           {% endif %}
         {% endfor %}
         <tr>
           <td>{{ r.ente }}</td>
-          <td>{{ r.puesto }}</td>
-          <td>{{ r.monto }}</td>
-          <td>{{ r.qnas }}</td>
-          <td>{{ r.fecha_ingreso }}</td>
-          <td>{{ r.fecha_egreso }}</td>
+          <td>{{ _sanitize_text(db_manager.normalizar_ente(r.ente)) or 'Desconocido' }}</td>
+          <td>{{ r.puesto or 'Sin puesto' }}</td>
+          <td>{{ r.monto or '-' }}</td>
+          <td>
+            {% if r.qnas %}
+              {{ r.qnas | tojson }}
+            {% else %}
+              -
+            {% endif %}
+          </td>
+          <td>{{ r.fecha_ingreso or '-' }}</td>
+          <td>{{ r.fecha_egreso or '-' }}</td>
           <td>
             {% if editable %}
               <label class="switch">
                 <input type="checkbox"
-                       {% if r.estado == 'Solventado' %}checked{% endif %}
+                       {% if info.estado == 'Solventado' %}checked{% endif %}
                        onchange="window.location.href='{{ url_for('solventacion_detalle', rfc=rfc) }}'">
                 <span class="slider"></span>
               </label>
