@@ -2,21 +2,134 @@
 {% block title %}Solventación{% endblock %}
 
 {% block content %}
+<style>
+  .solventacion-container {
+    max-width: 800px;
+    margin: 3rem auto;
+    padding: 2rem;
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+  }
+
+  .solventacion-container h2 {
+    color: #004c6d;
+    font-size: 1.5rem;
+    margin-bottom: 1.5rem;
+    border-bottom: 2px solid #004c6d;
+    padding-bottom: 0.5rem;
+  }
+
+  label {
+    font-weight: 600;
+    color: #333;
+    display: block;
+    margin-bottom: 0.5rem;
+    font-size: 1rem;
+  }
+
+  textarea {
+    width: 100%;
+    min-height: 180px;
+    padding: 1rem;
+    font-size: 1rem;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    resize: vertical;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.08);
+    transition: all 0.2s ease;
+  }
+
+  textarea:focus {
+    outline: none;
+    border-color: #0074a6;
+    box-shadow: 0 0 0 3px rgba(0,116,166,0.2);
+  }
+
+  .acciones {
+    margin-top: 1.5rem;
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+  }
+
+  .btn {
+    display: inline-block;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+  }
+
+  .btn-primary {
+    background-color: #004c6d;
+    color: #fff;
+    border: none;
+  }
+
+  .btn-primary:hover {
+    background-color: #006b9b;
+    transform: translateY(-1px);
+  }
+
+  .btn-secondary {
+    background-color: #ddd;
+    color: #333;
+    text-decoration: none;
+  }
+
+  .btn-secondary:hover {
+    background-color: #ccc;
+    transform: translateY(-1px);
+  }
+
+  .msg-vacio {
+    color: #c62828;
+    background: #fdecea;
+    padding: 1rem;
+    border-radius: 8px;
+    text-align: center;
+    font-weight: 600;
+  }
+
+  .confirmacion {
+    margin-top: 1rem;
+    padding: 0.8rem 1rem;
+    border-radius: 8px;
+    font-weight: 500;
+    display: none;
+  }
+
+  .confirmacion.ok {
+    background-color: #e6f4ea;
+    color: #0a7b33;
+  }
+
+  .confirmacion.error {
+    background-color: #fdecea;
+    color: #c62828;
+  }
+</style>
+
 <div class="solventacion-container">
   <h2>Solventación para RFC {{ rfc }}</h2>
 
   {% if not session.get('autenticado') %}
-    <p class="msg-vacio">No autorizado.</p>
+    <p class="msg-vacio">⚠️ No autorizado.</p>
   {% else %}
     <form id="solventacionForm">
-      <label for="solventacion">Observación o enlace:</label>
-      <textarea id="solventacion" name="solventacion" rows="5"
-        placeholder="Describe o pega el enlace de la solventación">{{ solventacion or '' }}</textarea>
+      <label for="solventacion">Observación o enlace de solventación:</label>
+      <textarea id="solventacion" name="solventacion"
+        placeholder="Describe brevemente la solventación, agrega enlace o evidencia...">{{ solventacion or '' }}</textarea>
 
-      <div class="acciones" style="margin-top:1rem;">
-        <button type="submit" class="btn btn-primary">Guardar</button>
-        <a href="{{ url_for('resultados_por_rfc', rfc=rfc) }}" class="btn btn-secondary">Regresar</a>
+      <div class="acciones">
+        <button type="submit" class="btn btn-primary">💾 Guardar</button>
+        <a href="{{ url_for('resultados_por_rfc', rfc=rfc) }}" class="btn btn-secondary">← Regresar</a>
       </div>
+
+      <div id="confirmacion" class="confirmacion"></div>
     </form>
   {% endif %}
 </div>
@@ -27,8 +140,12 @@ document.getElementById('solventacionForm')?.addEventListener('submit', async e 
 
   const rfc = "{{ rfc }}";
   const solventacion = document.getElementById('solventacion').value.trim();
+  const confirmacion = document.getElementById('confirmacion');
+
   if (!solventacion) {
-    alert("Debes escribir una observación o enlace antes de guardar.");
+    confirmacion.textContent = "Debes escribir una observación o enlace antes de guardar.";
+    confirmacion.className = "confirmacion error";
+    confirmacion.style.display = "block";
     return;
   }
 
@@ -39,11 +156,17 @@ document.getElementById('solventacionForm')?.addEventListener('submit', async e 
   });
 
   const data = await res.json();
+  confirmacion.style.display = "block";
+
   if (data.error) {
-    alert("❌ Error: " + data.error);
+    confirmacion.textContent = "❌ Error: " + data.error;
+    confirmacion.className = "confirmacion error";
   } else {
-    alert("✅ " + (data.mensaje || "Solventación registrada."));
-    window.location.href = "{{ url_for('resultados_por_rfc', rfc=rfc) }}";
+    confirmacion.textContent = "✅ " + (data.mensaje || "Solventación registrada correctamente.");
+    confirmacion.className = "confirmacion ok";
+    setTimeout(() => {
+      window.location.href = `/resultados/${rfc}`;
+    }, 1500);
   }
 });
 </script>

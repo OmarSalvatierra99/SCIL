@@ -7,6 +7,7 @@ import sqlite3
 import json
 import hashlib
 
+
 class DatabaseManager:
     def __init__(self, db_path="scil.db"):
         self.db_path = db_path
@@ -89,7 +90,7 @@ class DatabaseManager:
     def _sanitize(self, s):
         if not s:
             return ""
-        return str(s).strip().upper().replace("Á","A").replace("É","E").replace("Í","I").replace("Ó","O").replace("Ú","U")
+        return str(s).strip().upper().replace("Á", "A").replace("É", "E").replace("Í", "I").replace("Ó", "O").replace("Ú", "U")
 
     # -------------------------------------------------------
     # Usuarios
@@ -231,7 +232,7 @@ class DatabaseManager:
     def obtener_resultados_paginados(self, tabla, filtro, pagina, limite):
         conn = self._connect()
         cur = conn.cursor()
-        cur.execute(f"SELECT datos FROM {tabla} ORDER BY id DESC LIMIT ? OFFSET ?", (limite, (pagina-1)*limite))
+        cur.execute(f"SELECT datos FROM {tabla} ORDER BY id DESC LIMIT ? OFFSET ?", (limite, (pagina - 1) * limite))
         rows = cur.fetchall()
         conn.close()
 
@@ -244,6 +245,7 @@ class DatabaseManager:
         return resultados, len(resultados)
 
     def obtener_resultados_por_rfc(self, rfc):
+        """Devuelve los registros asociados a un RFC, sin duplicados."""
         conn = self._connect()
         cur = conn.cursor()
         cur.execute("""
@@ -253,6 +255,7 @@ class DatabaseManager:
         """, (rfc,))
         rows = cur.fetchall()
         conn.close()
+
         if not rows:
             return None
 
@@ -261,19 +264,36 @@ class DatabaseManager:
             try:
                 resultados.append(json.loads(row[0]))
             except Exception:
-                pass
+                continue
 
         if not resultados:
             return None
 
-        return {
+        # --- Unificación de registros únicos por combinación clave ---
+        vistos = set()
+        registros_unicos = []
+        for r in resultados:
+            for reg in r.get("registros", []):
+                clave = (
+                    reg.get("ente"),
+                    reg.get("puesto"),
+                    reg.get("monto"),
+                    reg.get("fecha_ingreso"),
+                    reg.get("fecha_egreso")
+                )
+                if clave not in vistos:
+                    vistos.add(clave)
+                    registros_unicos.append(reg)
+
+        info = {
             "rfc": rfc,
             "nombre": resultados[0].get("nombre", ""),
             "entes": list({e for r in resultados for e in r.get("entes", [])}),
-            "registros": [reg for r in resultados for reg in r.get("registros", [])],
+            "registros": registros_unicos,
             "estado": resultados[-1].get("estado", ""),
             "solventacion": resultados[-1].get("solventacion", "")
         }
+        return info
 
     def actualizar_solventacion(self, rfc, estado, solventacion):
         conn = self._connect()
