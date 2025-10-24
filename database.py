@@ -173,7 +173,7 @@ class DatabaseManager:
             raise
         return nuevos
 
-    # -------------------------------------------------------
+     # -------------------------------------------------------
     # Lectura con paginación (general)
     # -------------------------------------------------------
     def obtener_resultados_paginados(self, tipo_analisis=None, busqueda=None, pagina=1, limite=50):
@@ -194,7 +194,7 @@ class DatabaseManager:
 
         offset = (pagina - 1) * limite
         cur.execute(
-            f"SELECT datos {base} ORDER BY fecha_analisis DESC LIMIT ? OFFSET ?",
+            f"SELECT rfc, datos {base} ORDER BY fecha_analisis DESC LIMIT ? OFFSET ?",
             tuple(params + [limite, offset])
         )
         filas = cur.fetchall()
@@ -202,9 +202,23 @@ class DatabaseManager:
         resultados = []
         for f in filas:
             d = self._safe_json_loads(f['datos'])
-            if d is not None:
-                resultados.append(d)
+            if not isinstance(d, dict):
+                continue
+
+            resultado = {
+                "rfc": f["rfc"],
+                "nombre": d.get("nombre", ""),
+                "entes": d.get("entes", []),
+                "estado": d.get("estado", ""),  # si no existe, queda vacío
+                "registros": d.get("registros", []),
+                "tipo_patron": d.get("tipo_patron", ""),
+                "descripcion": d.get("descripcion", "")
+            }
+
+            resultados.append(resultado)
+
         return resultados, total
+
 
     # -------------------------------------------------------
     # Vistas detalladas — por RFC y por Ente

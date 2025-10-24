@@ -21,27 +21,28 @@
           </thead>
           <tbody>
             {% for r in registros %}
+              {% set editable = false %}
+              {% for e in session.get('entes', []) %}
+                {% if _sanitize_text(e) in _sanitize_text(r.ente) or _sanitize_text(e) in _sanitize_text(r.incompatibles|join(',')) or _sanitize_text(e) == 'TODOS' %}
+                  {% set editable = true %}
+                {% endif %}
+              {% endfor %}
               <tr>
-                <td>
-		<a href="{{ url_for('resultados_por_rfc', rfc=r.rfc) }}" class="link-rfc">{{ r.rfc }}</a>
-                </td>
+                <td><a href="{{ url_for('resultados_por_rfc', rfc=r.rfc) }}" class="link-rfc">{{ r.rfc }}</a></td>
                 <td>{{ r.nombre }}</td>
                 <td>{{ r.puesto }}</td>
                 <td>{{ r.incompatibles|join(', ') }}</td>
                 <td>
-                  {% set editable = false %}
-                  {% for e in session.get('entes', []) %}
-                    {% if e|upper in r.ente|upper or e|upper == 'TODOS' %}
-                      {% set editable = true %}
-                    {% endif %}
-                  {% endfor %}
-                  <label class="switch">
-                    <input type="checkbox" 
-                           {% if r.estado == 'Solventado' %}checked{% endif %}
-                           {% if not editable %}disabled{% endif %}
-			   onchange="window.location.href='{{ url_for('solventacion_detalle', rfc=r.rfc) }}'">
-                    <span class="slider"></span>
-                  </label>
+                  {% if editable %}
+                    <label class="switch">
+                      <input type="checkbox"
+                             {% if r.estado == 'Solventado' %}checked{% endif %}
+                             onchange="window.location.href='{{ url_for('solventacion_detalle', rfc=r.rfc) }}'">
+                      <span class="slider"></span>
+                    </label>
+                  {% else %}
+                    <span style="color:#888;">Bloqueado</span>
+                  {% endif %}
                 </td>
               </tr>
             {% endfor %}

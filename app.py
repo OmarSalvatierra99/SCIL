@@ -298,6 +298,52 @@ def solventacion_detalle(rfc):
     return render_template("solventacion.html", rfc=rfc.upper(), solventacion=solventacion_texto)
 
 # -----------------------------------------------------------
+# Actualizar estado de solventación (solo entes autorizados)
+# -----------------------------------------------------------
+@app.route("/actualizar_estado", methods=["POST"])
+def actualizar_estado():
+    if not session.get("autenticado"):
+        return jsonify({"error": "No autorizado"}), 403
+
+    data = request.get_json(silent=True) or {}
+    rfc = (data.get("rfc") or "").upper()
+    nuevo_estado = data.get("estado", "Solventado")
+    solventacion = data.get("solventacion", "").strip()
+
+    if not rfc:
+        return jsonify({"error": "RFC faltante"}), 400
+
+    # --- validar acceso del usuario ---
+    entes_usuario = session.get("entes", [])
+    info = db_manager.obtener_resultados_por_rfc(rfc)
+    if not info:
+        return jsonify({"error": "RFC no encontrado"}), 404
+
+    # Verificar si al menos uno de los entes del registro pertenece al usuario
+    entes_registro = [e.upper() for e in info.get("entes", [])]
+    puede_editar = any(
+        _sanitize_text(eu) in _sanitize_text(er)
+        for eu in entes_usuario for er in entes_registro
+    ) or _allowed_all(entes_usuario)
+
+    if not puede_editar:
+        return jsonify({"error": "Sin permiso para editar este registro"}), 403
+
+    # --- actualizar en base de datos ---
+    try:
+        db_manager.actualizar_solventacion(rfc, nuevo_estado, solventacion)
+        return jsonify({"mensaje": "Solventación actualizada correctamente"})
+    except Exception as e:
+        return jsonify({"error": f"Error al guardar: {e}"}), 500
+
+
+# Hacer disponible la función en las plantillas Jinja
+@app.context_processor
+def utility_processor():
+    return dict(_sanitize_text=_sanitize_text)
+
+
+# -----------------------------------------------------------
 # Main
 # -----------------------------------------------------------
 if __name__ == "__main__":

@@ -17,11 +17,17 @@
         <th>Quincenas</th>
         <th>Fecha Alta</th>
         <th>Fecha Baja</th>
-        <th>Solventada</th>
+        <th>Solventado</th>
       </tr>
     </thead>
     <tbody>
       {% for r in info.registros %}
+        {% set editable = false %}
+        {% for e in session.get('entes', []) %}
+          {% if _sanitize_text(e) in _sanitize_text(r.ente) or _sanitize_text(e) in _sanitize_text(r.incompatibles|join(',')) or _sanitize_text(e) == 'TODOS' %}
+            {% set editable = true %}
+          {% endif %}
+        {% endfor %}
         <tr>
           <td>{{ r.ente }}</td>
           <td>{{ r.puesto }}</td>
@@ -30,19 +36,16 @@
           <td>{{ r.fecha_ingreso }}</td>
           <td>{{ r.fecha_egreso }}</td>
           <td>
-            {% set editable = false %}
-            {% for e in session.get('entes', []) %}
-              {% if e|upper in r.ente|upper or e|upper == 'TODOS' %}
-                {% set editable = true %}
-              {% endif %}
-            {% endfor %}
-            <label class="switch">
-              <input type="checkbox"
-                     {% if r.estado == 'Solventado' %}checked{% endif %}
-                     {% if not editable %}disabled{% endif %}
-                     onchange="window.location.href='{{ url_for('solventacion_detalle', rfc=rfc) }}'">
-              <span class="slider"></span>
-            </label>
+            {% if editable %}
+              <label class="switch">
+                <input type="checkbox"
+                       {% if r.estado == 'Solventado' %}checked{% endif %}
+                       onchange="window.location.href='{{ url_for('solventacion_detalle', rfc=rfc) }}'">
+                <span class="slider"></span>
+              </label>
+            {% else %}
+              <span style="color:#888;">Bloqueado</span>
+            {% endif %}
           </td>
         </tr>
       {% endfor %}
