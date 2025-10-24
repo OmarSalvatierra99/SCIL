@@ -29,6 +29,7 @@ def _sanitize_text(s):
     return str(s).strip().upper().replace("Á","A").replace("É","E").replace("Í","I").replace("Ó","O").replace("Ú","U")
 
 def _allowed_all(entes_usuario):
+    """Devuelve True si el usuario tiene acceso total."""
     return any(_sanitize_text(e) == "TODOS" for e in entes_usuario)
 
 # -----------------------------------------------------------
@@ -40,10 +41,17 @@ def login():
         usuario = request.form.get("usuario","").strip()
         clave = request.form.get("clave","").strip()
         user = db_manager.get_usuario(usuario, clave)
+
         if user:
             session["usuario"] = user["usuario"]
             session["nombre"] = user["nombre"]
-            session["entes"] = user["entes"]
+
+            # 🔹 Odilia y Víctor tienen acceso a todo automáticamente
+            if user["usuario"].lower() in ["odilia", "victor"]:
+                session["entes"] = ["TODOS"]
+            else:
+                session["entes"] = user["entes"]
+
             session["autenticado"] = True
             return redirect(url_for("dashboard"))
         else:
@@ -128,11 +136,15 @@ def reporte_por_ente():
     entes_usuario = session.get("entes", [])
     agrupado = {}
 
+    conn = db_manager._connect()
+    cur = conn.cursor()
+
     for r in resultados:
         entes_reg = r.get("entes", []) or ["Sin Ente"]
         for e in entes_reg:
             ente_nom = db_manager.normalizar_ente(e) or e
 
+            # Filtra entes según permisos
             if not (_allowed_all(entes_usuario) or any(
                 _sanitize_text(eu) in _sanitize_text(e) or _sanitize_text(eu) in _sanitize_text(ente_nom)
                 for eu in entes_usuario
@@ -163,17 +175,14 @@ def reporte_por_ente():
                     "estado": estado
                 }
 
-            # --- Traducir claves de entes a siglas ---
+            # --- Traducir claves a siglas ---
             for clave in r.get("entes", []):
-                conn = db_manager._connect()
-                cur = conn.cursor()
                 cur.execute("SELECT siglas, nombre FROM entes WHERE clave=?", (clave,))
                 row = cur.fetchone()
-                conn.close()
-                if row and row[0]:
-                    agrupado[clave_ente][rfc]["entes"].add(row[0])
-                elif row and row[1]:
-                    agrupado[clave_ente][rfc]["entes"].add(row[1])
+                if row and row["siglas"]:
+                    agrupado[clave_ente][rfc]["entes"].add(row["siglas"])
+                elif row and row["nombre"]:
+                    agrupado[clave_ente][rfc]["entes"].add(row["nombre"])
                 else:
                     agrupado[clave_ente][rfc]["entes"].add(clave)
 
@@ -181,7 +190,9 @@ def reporte_por_ente():
             if fecha:
                 agrupado[clave_ente][rfc]["qnas"].add(fecha)
 
-    # 🔹 Consolidar datos finales
+    conn.close()
+
+    # 🔹 Consolidar sin duplicados
     agrupado_final = {}
     for ente, rfcs in agrupado.items():
         agrupado_final[ente] = []
@@ -239,7 +250,7 @@ def actualizar_estado():
     solventacion = data.get("solventacion", "")
     try:
         filas = db_manager.actualizar_solventacion(rfc, estado, solventacion)
-        return jsonify({"mensaje": f"Actualizado ({filas} filas)"})
+        return jsonify({"mensaje": f"Actualizado ({filas} filas) correctamente"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

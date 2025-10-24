@@ -3,81 +3,23 @@
 
 {% block content %}
 <style>
-  .detalle-container {
-    max-width: 1200px;
-    margin: 2rem auto;
-    padding: 1.5rem;
-    background: #ffffff;
-    border-radius: 12px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-  }
-  .detalle-header {
-    margin-bottom: 1.5rem;
-    text-align: left;
-  }
-  .detalle-header p {
-    margin: 0.3rem 0;
-    font-size: 1rem;
-    color: #333;
-  }
-  .tabla-detalle {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.95rem;
-  }
-  .tabla-detalle th {
-    background-color: #004c6d;
-    color: white;
-    padding: 10px;
-    text-align: left;
-  }
-  .tabla-detalle td {
-    border-bottom: 1px solid #e3e3e3;
-    padding: 8px 10px;
-  }
-  .tabla-detalle tr:nth-child(even) {
-    background-color: #f9f9f9;
-  }
-  .tabla-detalle tr:hover {
-    background-color: #f0f8ff;
-  }
-  .estado-solventado {
-    color: #0a7b33;
-    font-weight: 600;
-  }
-  .estado-no-solventado {
-    color: #c62828;
-    font-weight: 600;
-  }
-  .btn-area {
-    margin-top: 2rem;
-    text-align: center;
-  }
-  .btn {
-    text-decoration: none;
-    padding: 8px 16px;
-    border-radius: 6px;
-    cursor: pointer;
-    border: none;
-  }
-  .btn-secondary {
-    background-color: #ddd;
-    color: #333;
-  }
-  .btn-secondary:hover {
-    background-color: #ccc;
-  }
-  .btn-primary {
-    background-color: #004c6d;
-    color: #fff;
-  }
-  .btn-primary:hover {
-    background-color: #006b9b;
-  }
-  .bloqueado {
-    color: #888;
-    font-size: 0.9rem;
-  }
+  .detalle-container { max-width:1200px; margin:2rem auto; padding:1.5rem; background:#fff; border-radius:12px; box-shadow:0 2px 10px rgba(0,0,0,0.08); }
+  .detalle-header { margin-bottom:1.5rem; text-align:left; }
+  .detalle-header p { margin:0.3rem 0; font-size:1rem; color:#333; }
+  .tabla-detalle { width:100%; border-collapse:collapse; font-size:0.95rem; }
+  .tabla-detalle th { background:#004c6d; color:#fff; padding:10px; text-align:left; }
+  .tabla-detalle td { border-bottom:1px solid #e3e3e3; padding:8px 10px; }
+  .tabla-detalle tr:nth-child(even){ background:#f9f9f9; }
+  .tabla-detalle tr:hover{ background:#f0f8ff; }
+  .estado-solventado{ color:#0a7b33; font-weight:600; }
+  .estado-no-solventado{ color:#c62828; font-weight:600; }
+  .btn-area{ margin-top:2rem; text-align:center; }
+  .btn{ text-decoration:none; padding:8px 16px; border-radius:6px; cursor:pointer; border:none; }
+  .btn-secondary{ background:#ddd; color:#333; }
+  .btn-secondary:hover{ background:#ccc; }
+  .btn-primary{ background:#004c6d; color:#fff; }
+  .btn-primary:hover{ background:#006b9b; }
+  .bloqueado{ color:#888; font-size:0.9rem; }
 </style>
 
 <div class="detalle-container">
@@ -103,30 +45,26 @@
       {% for r in info.registros %}
         {% set qnas = r.qnas.keys() if r.qnas is mapping else [] %}
         {% set activo_total = qnas|length == 12 %}
-        {% set editable = false %}
+
+        {# ---- permisos por CLAVE ---- #}
+        {% set ns = namespace(editable=false) %}
+        {% set clave_ente = db_manager.normalizar_ente_clave(r.ente) %}
         {% for e in session.get('entes', []) %}
-          {% if _sanitize_text(e) in _sanitize_text(r.ente) or _sanitize_text(e) == 'TODOS' %}
-            {% set editable = true %}
+          {% if _sanitize_text(e) == 'TODOS' or _sanitize_text(e) == _sanitize_text(clave_ente) %}
+            {% set ns.editable = true %}
           {% endif %}
         {% endfor %}
+
         <tr>
           <td>{{ db_manager.normalizar_ente(r.ente) or r.ente or 'Desconocido' }}</td>
           <td>{{ r.puesto or 'Sin puesto' }}</td>
           <td>
-            {% if r.monto %}
-              {{ "MXN {:,.2f}".format(r.monto|float) }}
-            {% else %}
-              -
-            {% endif %}
+            {% if r.monto %}{{ "MXN {:,.2f}".format(r.monto|float) }}{% else %}-{% endif %}
           </td>
           <td>
             {% if activo_total %}
               <span style="color:#0a7b33;font-weight:600;">Activo en todo el ejercicio</span>
-            {% elif qnas %}
-              {{ qnas|join(', ') }}
-            {% else %}
-              -
-            {% endif %}
+            {% elif qnas %}{{ qnas|join(', ') }}{% else %}-{% endif %}
           </td>
           <td>{{ r.fecha_ingreso or '-' }}</td>
           <td>{{ r.fecha_egreso or '-' }}</td>
@@ -138,7 +76,7 @@
             {% endif %}
           </td>
           <td style="text-align:center;">
-            {% if editable %}
+            {% if ns.editable %}
               <button class="btn btn-primary" onclick="window.location.href='{{ url_for('solventacion_detalle', rfc=rfc) }}'">
                 {% if info.estado == 'Solventado' %}Editar{% else %}Solventar{% endif %}
               </button>
