@@ -22,16 +22,21 @@
           <tbody>
             {% for r in registros %}
               {% set editable = false %}
-              {% for e in session.get('entes', []) %}
-                {% if _sanitize_text(e) in _sanitize_text(r.ente) or _sanitize_text(e) in _sanitize_text(r.incompatibles|join(',')) or _sanitize_text(e) == 'TODOS' %}
-                  {% set editable = true %}
-                {% endif %}
+              {% set entes_usuario = session.get('entes', []) %}
+              {% set entes_registro = r.entes if r.entes is defined else (r.incompatibles or []) %}
+              {% for eu in entes_usuario %}
+                {% for er in entes_registro %}
+                  {% if eu|trim|upper in er|trim|upper or eu|trim|upper == 'TODOS' %}
+                    {% set editable = true %}
+                  {% endif %}
+                {% endfor %}
               {% endfor %}
+
               <tr>
                 <td><a href="{{ url_for('resultados_por_rfc', rfc=r.rfc) }}" class="link-rfc">{{ r.rfc }}</a></td>
                 <td>{{ r.nombre }}</td>
                 <td>{{ r.puesto }}</td>
-                <td>{{ r.incompatibles|join(', ') }}</td>
+                <td>{{ (r.entes or r.incompatibles)|join(', ') }}</td>
                 <td>
                   {% if editable %}
                     <label class="switch">
