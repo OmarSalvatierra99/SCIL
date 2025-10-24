@@ -10,7 +10,6 @@ from flask import (
 )
 import os
 import pandas as pd
-from datetime import datetime
 from io import BytesIO
 from database import DatabaseManager
 
@@ -93,6 +92,7 @@ def upload_laboral():
                 resultado = {
                     "rfc": rfc,
                     "nombre": nombre,
+                    "puesto": puesto,
                     "entes": [ente] if ente else [],
                     "registros": [{
                         "ente": ente,
@@ -117,7 +117,7 @@ def upload_laboral():
     })
 
 # -----------------------------------------------------------
-# Reportes generales — agrupados y ordenados por Ente
+# Reportes generales — agrupados por Ente y RFC
 # -----------------------------------------------------------
 @app.route("/resultados")
 def reporte_por_ente():
@@ -129,15 +129,82 @@ def reporte_por_ente():
     agrupado = {}
 
     for r in resultados:
-        for e in r.get("entes", []) or ["Sin Ente"]:
+        entes_reg = r.get("entes", []) or ["Sin Ente"]
+        for e in entes_reg:
             ente_nom = db_manager.normalizar_ente(e) or e
-            if _allowed_all(entes_usuario) or any(_sanitize_text(eu) in _sanitize_text(e) or _sanitize_text(eu) in _sanitize_text(ente_nom) for eu in entes_usuario):
-                agrupado.setdefault(ente_nom, []).append(r)
 
-    if not agrupado:
+            if not (_allowed_all(entes_usuario) or any(
+                _sanitize_text(eu) in _sanitize_text(e) or _sanitize_text(eu) in _sanitize_text(ente_nom)
+                for eu in entes_usuario
+            )):
+                continue
+
+            clave_ente = ente_nom.strip().upper()
+            agrupado.setdefault(clave_ente, {})
+
+            rfc = r.get("rfc")
+            descripcion = r.get("descripcion", "")
+            fecha = r.get("fecha_comun", "")
+            estado = r.get("estado", "Sin estado")
+
+            # 🔹 Extraer puesto desde registros
+            registros = r.get("registros", [])
+            puestos = sorted({reg.get("puesto", "").strip() for reg in registros if reg.get("puesto")})
+            puesto = ", ".join(puestos) if puestos else "Sin puesto"
+
+            if rfc not in agrupado[clave_ente]:
+                agrupado[clave_ente][rfc] = {
+                    "rfc": rfc,
+                    "nombre": r.get("nombre", ""),
+                    "puesto": puesto,
+                    "entes": set(),
+                    "descripcion": [],
+                    "qnas": set(),
+                    "estado": estado
+                }
+
+            # --- Traducir claves de entes a siglas ---
+            for clave in r.get("entes", []):
+                conn = db_manager._connect()
+                cur = conn.cursor()
+                cur.execute("SELECT siglas, nombre FROM entes WHERE clave=?", (clave,))
+                row = cur.fetchone()
+                conn.close()
+                if row and row[0]:
+                    agrupado[clave_ente][rfc]["entes"].add(row[0])
+                elif row and row[1]:
+                    agrupado[clave_ente][rfc]["entes"].add(row[1])
+                else:
+                    agrupado[clave_ente][rfc]["entes"].add(clave)
+
+            agrupado[clave_ente][rfc]["descripcion"].append(descripcion)
+            if fecha:
+                agrupado[clave_ente][rfc]["qnas"].add(fecha)
+
+    # 🔹 Consolidar datos finales
+    agrupado_final = {}
+    for ente, rfcs in agrupado.items():
+        agrupado_final[ente] = []
+        for r in rfcs.values():
+            qnas = sorted(r["qnas"])
+            if len(qnas) == 12 or set(qnas) == {f"QNA{i}" for i in range(1, 13)}:
+                descripcion = "Activo en todo el ejercicio"
+            else:
+                descripcion = ", ".join(sorted(set(r["descripcion"]))) or "Sin descripción"
+            agrupado_final[ente].append({
+                "rfc": r["rfc"],
+                "nombre": r["nombre"],
+                "puesto": r["puesto"],
+                "entes": sorted(r["entes"]),
+                "descripcion": descripcion,
+                "estado": r["estado"]
+            })
+
+    agrupado_ordenado = dict(sorted(agrupado_final.items(), key=lambda x: x[0].upper()))
+
+    if not agrupado_ordenado:
         return render_template("empty.html", tipo="ente", mensaje="Sin registros del ente asignado.")
 
-    agrupado_ordenado = dict(sorted(agrupado.items(), key=lambda x: x[0].upper()))
     return render_template("resultados.html", resultados=agrupado_ordenado)
 
 # -----------------------------------------------------------
@@ -190,8 +257,8 @@ def exportar_excel():
             rows.append({
                 "RFC": r.get("rfc"),
                 "Nombre": r.get("nombre"),
-                "Ente": ", ".join(r.get("entes", [])),
                 "Puesto": reg.get("puesto"),
+                "Ente": ", ".join(r.get("entes", [])),
                 "Monto": reg.get("monto"),
                 "Quincenas": reg.get("qnas"),
                 "Estado": r.get("estado")
@@ -203,7 +270,7 @@ def exportar_excel():
     return send_file(output, download_name="reporte.xlsx", as_attachment=True)
 
 # -----------------------------------------------------------
-# Catálogos de ENTES y MUNICIPIOS (solo consulta)
+# Catálogos de ENTES y MUNICIPIOS
 # -----------------------------------------------------------
 @app.route("/catalogos")
 def catalogos_home():
@@ -218,10 +285,7 @@ def catalogos_home():
 # -----------------------------------------------------------
 @app.context_processor
 def inject_helpers():
-    return {
-        "_sanitize_text": _sanitize_text,
-        "db_manager": db_manager
-    }
+    return {"_sanitize_text": _sanitize_text, "db_manager": db_manager}
 
 # -----------------------------------------------------------
 # Main

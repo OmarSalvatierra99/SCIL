@@ -14,7 +14,8 @@
           <tr>
             <th>RFC</th>
             <th>Nombre</th>
-            <th>Descripción</th>
+            <th>Puesto</th>
+            <th>Entes Duplicados</th>
             <th>Estado</th>
           </tr>
         </thead>
@@ -31,7 +32,14 @@
               {% endif %}
             </td>
             <td>{{ r.nombre or 'Sin nombre' }}</td>
-            <td>{{ r.descripcion or 'Sin descripción' }}</td>
+            <td>{{ r.puesto or 'Sin puesto' }}</td>
+            <td>
+              {% if r.entes %}
+                {{ r.entes | join(', ') }}
+              {% else %}
+                Sin entes duplicados
+              {% endif %}
+            </td>
             <td>{{ r.estado or 'Sin estado' }}</td>
           </tr>
           {% endfor %}
