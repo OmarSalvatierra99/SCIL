@@ -46,7 +46,7 @@ def login():
             session["usuario"] = user["usuario"]
             session["nombre"] = user["nombre"]
 
-            # 🔹 Odilia y Víctor tienen acceso a todo automáticamente
+            # 🔹 Odilia y Víctor tienen acceso total
             if user["usuario"].lower() in ["odilia", "victor"]:
                 session["entes"] = ["TODOS"]
             else:
@@ -159,7 +159,6 @@ def reporte_por_ente():
             fecha = r.get("fecha_comun", "")
             estado = r.get("estado", "Sin estado")
 
-            # 🔹 Extraer puesto desde registros
             registros = r.get("registros", [])
             puestos = sorted({reg.get("puesto", "").strip() for reg in registros if reg.get("puesto")})
             puesto = ", ".join(puestos) if puestos else "Sin puesto"
@@ -175,7 +174,6 @@ def reporte_por_ente():
                     "estado": estado
                 }
 
-            # --- Traducir claves a siglas ---
             for clave in r.get("entes", []):
                 cur.execute("SELECT siglas, nombre FROM entes WHERE clave=?", (clave,))
                 row = cur.fetchone()
@@ -192,7 +190,6 @@ def reporte_por_ente():
 
     conn.close()
 
-    # 🔹 Consolidar sin duplicados
     agrupado_final = {}
     for ente, rfcs in agrupado.items():
         agrupado_final[ente] = []
@@ -212,10 +209,8 @@ def reporte_por_ente():
             })
 
     agrupado_ordenado = dict(sorted(agrupado_final.items(), key=lambda x: x[0].upper()))
-
     if not agrupado_ordenado:
         return render_template("empty.html", tipo="ente", mensaje="Sin registros del ente asignado.")
-
     return render_template("resultados.html", resultados=agrupado_ordenado)
 
 # -----------------------------------------------------------
@@ -255,30 +250,73 @@ def actualizar_estado():
         return jsonify({"error": str(e)}), 500
 
 # -----------------------------------------------------------
-# Descarga en Excel
+# Exportar general
 # -----------------------------------------------------------
-@app.route("/exportar")
-def exportar_excel():
+@app.route("/exportar_general")
+def exportar_excel_general():
     if not session.get("autenticado"):
         return redirect(url_for("login"))
-    resultados, _ = db_manager.obtener_resultados_paginados("laboral", None, 1, 10000)
+
+    resultados, _ = db_manager.obtener_resultados_paginados("laboral", None, 1, 100000)
     rows = []
     for r in resultados:
         for reg in (r.get("registros") or []):
             rows.append({
                 "RFC": r.get("rfc"),
                 "Nombre": r.get("nombre"),
+                "Entes Incompatibilidad": ", ".join(r.get("entes", [])),
                 "Puesto": reg.get("puesto"),
-                "Ente": ", ".join(r.get("entes", [])),
+                "Fecha Alta": reg.get("fecha_ingreso"),
+                "Fecha Baja": reg.get("fecha_egreso"),
                 "Monto": reg.get("monto"),
-                "Quincenas": reg.get("qnas"),
-                "Estado": r.get("estado")
+                "Cruce Quincenas": reg.get("qnas") or "-",
+                "Estatus": r.get("estado")
             })
     df = pd.DataFrame(rows)
     output = BytesIO()
     df.to_excel(output, index=False)
     output.seek(0)
-    return send_file(output, download_name="reporte.xlsx", as_attachment=True)
+    return send_file(output, download_name="reporte_general.xlsx", as_attachment=True)
+
+# -----------------------------------------------------------
+# Exportar por ente
+# -----------------------------------------------------------
+@app.route("/exportar_por_ente")
+def exportar_excel_por_ente():
+    if not session.get("autenticado"):
+        return redirect(url_for("login"))
+
+    ente_seleccionado = request.args.get("ente")
+    if not ente_seleccionado:
+        return jsonify({"error": "No se seleccionó un ente"}), 400
+
+    resultados, _ = db_manager.obtener_resultados_paginados("laboral", None, 1, 100000)
+    rows = []
+    for r in resultados:
+        entes = [db_manager.normalizar_ente(e) or e for e in r.get("entes", [])]
+        if not any(ente_seleccionado.upper() in (e or "").upper() for e in entes):
+            continue
+        registros = r.get("registros") or []
+        for reg in registros:
+            rows.append({
+                "Puesto": reg.get("puesto"),
+                "Fecha Alta": reg.get("fecha_ingreso"),
+                "Fecha Baja": reg.get("fecha_egreso"),
+                "Monto": reg.get("monto"),
+                "Cruce Quincenas": reg.get("qnas") or "-",
+                "Estatus": r.get("estado"),
+                "Entes Incompatibilidad": ", ".join(r.get("entes", []))
+            })
+
+    if not rows:
+        return jsonify({"error": "No se encontraron registros para el ente seleccionado."}), 404
+
+    df = pd.DataFrame(rows)
+    output = BytesIO()
+    df.to_excel(output, index=False)
+    output.seek(0)
+    filename = f"reporte_{ente_seleccionado.replace(' ', '_')}.xlsx"
+    return send_file(output, download_name=filename, as_attachment=True)
 
 # -----------------------------------------------------------
 # Catálogos de ENTES y MUNICIPIOS

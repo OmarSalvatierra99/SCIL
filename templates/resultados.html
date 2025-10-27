@@ -16,6 +16,41 @@
     margin-bottom: 1.5rem;
     color: #004c6d;
   }
+  .export-bar {
+    text-align: right;
+    margin-bottom: 1rem;
+  }
+  .export-bar form {
+    display: inline-block;
+    margin-left: 0.5rem;
+  }
+  select {
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+  }
+  .btn {
+    text-decoration: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    border: none;
+    font-weight: 500;
+  }
+  .btn-primary {
+    background-color: #004c6d;
+    color: white;
+  }
+  .btn-primary:hover {
+    background-color: #006b9b;
+  }
+  .btn-secondary {
+    background-color: #ddd;
+    color: #333;
+  }
+  .btn-secondary:hover {
+    background-color: #ccc;
+  }
   .ente-bloque {
     margin-bottom: 2.5rem;
   }
@@ -72,6 +107,23 @@
 
 <div class="report-container">
   <h2>Resultados Agrupados por Ente</h2>
+
+  <!-- Bloques de exportación -->
+  <div class="export-bar">
+    <form action="{{ url_for('exportar_excel_general') }}" method="get">
+      <button type="submit" class="btn btn-primary">📄 Exportar General</button>
+    </form>
+
+    <form action="{{ url_for('exportar_excel_por_ente') }}" method="get">
+      <select name="ente" required>
+        <option value="">Selecciona Ente...</option>
+        {% for ente, data in resultados.items() %}
+          <option value="{{ ente }}">{{ ente }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn btn-secondary">🏛️ Exportar por Ente</button>
+    </form>
+  </div>
 
   {% if resultados %}
     {% for ente, lista in resultados.items() %}
