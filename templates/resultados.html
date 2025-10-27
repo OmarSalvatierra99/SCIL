@@ -3,16 +3,19 @@
 
 {% block content %}
 <div class="report-container">
-  <h2>Resultados Agrupados por Ente</h2>
+  <div class="header-flex">
+    <h2>Resultados Agrupados por Ente</h2>
+    <span class="subtitle">Consulta de posibles duplicidades detectadas</span>
+  </div>
 
-  <!-- Barra de exportaciones -->
+  <!-- BOTONES DE EXPORTACIÓN -->
   <div class="export-bar">
-    <form action="{{ url_for('exportar_excel_general') }}" method="get">
+    <form action="{{ url_for('exportar_excel_general') }}" method="get" class="form-inline">
       <button type="submit" class="btn btn-primary">📄 Exportar General</button>
     </form>
 
-    <form action="{{ url_for('exportar_excel_por_ente') }}" method="get">
-      <select name="ente" required>
+    <form action="{{ url_for('exportar_excel_por_ente') }}" method="get" class="form-inline">
+      <select name="ente" id="selectEnte" required>
         <option value="">Selecciona Ente...</option>
         {% for ente, data in resultados.items() %}
           <option value="{{ ente }}">{{ ente }}</option>
@@ -22,11 +25,11 @@
     </form>
   </div>
 
+  <!-- TABLAS DE RESULTADOS -->
   {% if resultados %}
     {% for ente, lista in resultados.items() %}
       <div class="ente-bloque">
         <div class="ente-nombre">{{ ente }}</div>
-
         <table class="tabla-resultados">
           <thead>
             <tr>
@@ -34,7 +37,6 @@
               <th>Nombre</th>
               <th>Puesto</th>
               <th>Entes Duplicados</th>
-              <th>Estatus</th>
             </tr>
           </thead>
           <tbody>
@@ -43,32 +45,21 @@
               <td>
                 {% if r.rfc %}
                   <a href="{{ url_for('resultados_por_rfc', rfc=r.rfc) }}" class="link-rfc">{{ r.rfc }}</a>
-                {% else %}
-                  Sin RFC
-                {% endif %}
+                {% else %}Sin RFC{% endif %}
               </td>
               <td>{{ r.nombre or 'Sin nombre' }}</td>
               <td>{{ r.puesto or 'Sin puesto' }}</td>
               <td>
                 {% if r.entes %}
                   {% for ente_dup in r.entes %}
-                    {% set estado_color = (
+                    {% set color = (
                       'verde' if r.estado == 'Solventado' else
                       'rojo' if r.estado == 'No Solventado' else 'gris'
                     ) %}
-                    <span class="tag-ente {{ estado_color }}">{{ ente_dup }}</span>
+                    <span class="tag-ente {{ color }}">{{ ente_dup }}</span>
                   {% endfor %}
                 {% else %}
                   <span class="tag-ente gris">Sin entes duplicados</span>
-                {% endif %}
-              </td>
-              <td>
-                {% if r.estado == 'Solventado' %}
-                  <span class="estado-solventado">Solventado</span>
-                {% elif r.estado == 'No Solventado' %}
-                  <span class="estado-no-solventado">No Solventado</span>
-                {% else %}
-                  <span class="estado-sin-valoracion">Sin valoración</span>
                 {% endif %}
               </td>
             </tr>
