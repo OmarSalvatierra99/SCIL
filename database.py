@@ -154,6 +154,22 @@ class DatabaseManager:
         conn.close()
         return mapa
 
+    def get_mapa_claves_inverso(self):
+        """Devuelve {'ENTE_#####': 'SIGLA' o 'NOMBRE'} para uso inverso."""
+        conn = self._connect()
+        cur = conn.cursor()
+        cur.execute("SELECT clave, siglas, nombre FROM entes WHERE activo=1")
+        mapa = {}
+        for clave, sigla, nombre in cur.fetchall():
+            if not clave:
+                continue
+            if sigla:
+                mapa[clave.strip().upper()] = sigla.strip().upper()
+            elif nombre:
+                mapa[clave.strip().upper()] = nombre.strip().upper()
+        conn.close()
+        return mapa
+
     # -------------------------------------------------------
     # Normalización de entes
     # -------------------------------------------------------
@@ -179,7 +195,6 @@ class DatabaseManager:
         val = self._sanitize(valor)
         if mapa_siglas and val in mapa_siglas:
             return mapa_siglas[val]
-
         conn = self._connect()
         cur = conn.cursor()
         cur.execute("""
@@ -195,6 +210,7 @@ class DatabaseManager:
     # Resultados laborales
     # -------------------------------------------------------
     def comparar_con_historico(self, nuevos):
+        """Evita duplicados comparando hashes SHA256 del JSON."""
         conn = self._connect()
         cur = conn.cursor()
         cur.execute("SELECT hash_firma FROM laboral")
@@ -235,7 +251,6 @@ class DatabaseManager:
         cur.execute(f"SELECT datos FROM {tabla} ORDER BY id DESC LIMIT ? OFFSET ?", (limite, (pagina - 1) * limite))
         rows = cur.fetchall()
         conn.close()
-
         resultados = []
         for row in rows:
             try:
@@ -265,11 +280,10 @@ class DatabaseManager:
                 resultados.append(json.loads(row[0]))
             except Exception:
                 continue
-
         if not resultados:
             return None
 
-        # --- Unificación de registros únicos por combinación clave ---
+        # Unificación por combinación clave
         vistos = set()
         registros_unicos = []
         for r in resultados:
@@ -290,17 +304,22 @@ class DatabaseManager:
             "nombre": resultados[0].get("nombre", ""),
             "entes": list({e for r in resultados for e in r.get("entes", [])}),
             "registros": registros_unicos,
-            "estado": resultados[-1].get("estado", ""),
+            "estado": resultados[-1].get("estado", "Sin valoración"),
             "solventacion": resultados[-1].get("solventacion", "")
         }
         return info
 
     def actualizar_solventacion(self, rfc, estado, solventacion):
+        """Actualiza campos de estado y solventacion dentro del JSON."""
         conn = self._connect()
         cur = conn.cursor()
         cur.execute("""
             UPDATE laboral
-            SET datos = json_set(datos, '$.estado', ?, '$.solventacion', ?)
+            SET datos = json_set(
+                datos,
+                '$.estado', ?,
+                '$.solventacion', ?
+            )
             WHERE json_extract(datos, '$.rfc') = ?
         """, (estado, solventacion, rfc))
         filas = cur.rowcount

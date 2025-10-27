@@ -1,48 +1,47 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}SASP - Sistema de Auditoría de Servicios Personales{% endblock %}</title>
 
-  <!-- CSS principal -->
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-
-  <!-- Ícono de pestaña -->
+  <!-- Referencias globales -->
   <link rel="icon" href="{{ url_for('static', filename='ofs_logo.png') }}" type="image/png">
-
-  <!-- JS principal diferido -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <script defer src="{{ url_for('static', filename='main.js') }}"></script>
 </head>
+
 <body>
+  <!-- Barra de navegación -->
   <nav class="navbar">
     <div class="nav-container">
       <div class="nav-brand">
-        <img src="{{ url_for('static', filename='ofs_logo.png') }}" alt="SASP">
-        <div>
-          <h1>SASP - Sistema de Auditoría de Servicios Personales</h1>
-          <span>Órgano de Fiscalización Superior de Tlaxcala</span>
+        <img src="{{ url_for('static', filename='ofs_logo.png') }}" alt="OFS" class="nav-logo">
+        <div class="nav-title">
+          <h1 class="nav-system">SASP</h1>
+          <span class="nav-subtitle">Sistema de Auditoría de Servicios Personales</span>
+          <small class="nav-org">Órgano de Fiscalización Superior del Estado de Tlaxcala</small>
         </div>
       </div>
 
       <div class="nav-links">
-        <a href="{{ url_for('dashboard') }}"
-           class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">Inicio</a>
-
-        <a href="{{ url_for('reporte_por_ente') }}"
-           class="nav-link {% if request.endpoint == 'reporte_por_ente' %}active{% endif %}">Resultados</a>
-
-        <a href="{{ url_for('catalogos_home') }}"
-           class="nav-link {% if request.endpoint == 'catalogos_home' %}active{% endif %}">Catálogos</a>
-
+        <a href="{{ url_for('dashboard') }}" class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">Inicio</a>
+        <a href="{{ url_for('reporte_por_ente') }}" class="nav-link {% if request.endpoint == 'reporte_por_ente' %}active{% endif %}">Resultados</a>
+        <a href="{{ url_for('catalogos_home') }}" class="nav-link {% if request.endpoint == 'catalogos_home' %}active{% endif %}">Catálogos</a>
         <a href="{{ url_for('logout') }}" class="nav-link">Salir</a>
       </div>
     </div>
   </nav>
 
+  <!-- Contenido principal -->
   <main class="main-content">
     {% block content %}{% endblock %}
   </main>
+
+  <!-- Pie institucional -->
+  <footer class="footer">
+    <p>© 2025 Órgano de Fiscalización Superior del Estado de Tlaxcala — SASP</p>
+  </footer>
 </body>
 </html>
 

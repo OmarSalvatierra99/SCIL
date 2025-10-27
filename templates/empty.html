@@ -5,24 +5,7 @@
 <div class="empty-container">
   <h2>No se encontraron resultados</h2>
   <p>{{ mensaje }}</p>
-  <a href="{{ url_for('reporte_por_ente') }}" class="btn btn-primary" style="margin-top:1rem;">Volver a resultados</a>
+  <a href="{{ url_for('reporte_por_ente') }}" class="btn btn-primary">Volver a resultados</a>
 </div>
-
-<style>
-.empty-container {
-  text-align: center;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  padding: 2rem;
-  box-shadow: var(--shadow-sm);
-  max-width: 600px;
-  margin: 3rem auto;
-}
-.empty-container h2 {
-  color: var(--color-primary);
-  margin-bottom: 1rem;
-}
-</style>
 {% endblock %}
 

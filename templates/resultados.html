@@ -2,113 +2,10 @@
 {% block title %}Resultados por Ente - SASP{% endblock %}
 
 {% block content %}
-<style>
-  .report-container {
-    max-width: 1200px;
-    margin: 2rem auto;
-    padding: 1.5rem;
-    background: #ffffff;
-    border-radius: 12px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-  }
-  h2 {
-    text-align: center;
-    margin-bottom: 1.5rem;
-    color: #004c6d;
-  }
-  .export-bar {
-    text-align: right;
-    margin-bottom: 1rem;
-  }
-  .export-bar form {
-    display: inline-block;
-    margin-left: 0.5rem;
-  }
-  select {
-    padding: 6px 10px;
-    border-radius: 6px;
-    border: 1px solid #ccc;
-  }
-  .btn {
-    text-decoration: none;
-    padding: 8px 16px;
-    border-radius: 6px;
-    cursor: pointer;
-    border: none;
-    font-weight: 500;
-  }
-  .btn-primary {
-    background-color: #004c6d;
-    color: white;
-  }
-  .btn-primary:hover {
-    background-color: #006b9b;
-  }
-  .btn-secondary {
-    background-color: #ddd;
-    color: #333;
-  }
-  .btn-secondary:hover {
-    background-color: #ccc;
-  }
-  .ente-bloque {
-    margin-bottom: 2.5rem;
-  }
-  .ente-nombre {
-    background: #004c6d;
-    color: white;
-    font-weight: 600;
-    padding: 10px;
-    border-radius: 6px 6px 0 0;
-  }
-  .tabla-resultados {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.95rem;
-  }
-  .tabla-resultados th {
-    background-color: #004c6d;
-    color: white;
-    padding: 10px;
-    text-align: left;
-  }
-  .tabla-resultados td {
-    border-bottom: 1px solid #e3e3e3;
-    padding: 8px 10px;
-  }
-  .tabla-resultados tr:nth-child(even) {
-    background-color: #f9f9f9;
-  }
-  .tabla-resultados tr:hover {
-    background-color: #f0f8ff;
-  }
-  .link-rfc {
-    color: #004c6d;
-    text-decoration: none;
-    font-weight: 600;
-  }
-  .link-rfc:hover {
-    text-decoration: underline;
-  }
-  .estado-solventado {
-    color: #0a7b33;
-    font-weight: 600;
-  }
-  .estado-pendiente {
-    color: #c62828;
-    font-weight: 600;
-  }
-  .msg-vacio {
-    text-align: center;
-    color: #666;
-    margin-top: 2rem;
-  }
-</style>
-
 <div class="report-container">
   <h2>Resultados Agrupados por Ente</h2>
 
-  <!-- Bloques de exportación -->
+  <!-- Barra de exportaciones -->
   <div class="export-bar">
     <form action="{{ url_for('exportar_excel_general') }}" method="get">
       <button type="submit" class="btn btn-primary">📄 Exportar General</button>
@@ -127,52 +24,58 @@
 
   {% if resultados %}
     {% for ente, lista in resultados.items() %}
-    <div class="ente-bloque">
-      <div class="ente-nombre">{{ ente }}</div>
-      <table class="tabla-resultados">
-        <thead>
-          <tr>
-            <th>RFC</th>
-            <th>Nombre</th>
-            <th>Puesto</th>
-            <th>Entes Duplicados</th>
-            <th>Estado</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for r in lista %}
-          <tr>
-            <td>
-              {% if r.rfc %}
-                <a href="{{ url_for('resultados_por_rfc', rfc=r.rfc) }}" class="link-rfc">{{ r.rfc }}</a>
-              {% else %}
-                Sin RFC
-              {% endif %}
-            </td>
-            <td>{{ r.nombre or 'Sin nombre' }}</td>
-            <td>
-              {% set puesto = (r.registros[0].puesto if r.registros and r.registros[0].puesto else r.puesto) %}
-              {{ puesto or 'Sin puesto' }}
-            </td>
-            <td>
-              {% if r.entes %}
-                {{ r.entes | join(', ') }}
-              {% else %}
-                Sin entes duplicados
-              {% endif %}
-            </td>
-            <td>
-              {% if r.estado == 'Solventado' %}
-                <span class="estado-solventado">Solventado</span>
-              {% else %}
-                <span class="estado-pendiente">No Solventado</span>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+      <div class="ente-bloque">
+        <div class="ente-nombre">{{ ente }}</div>
+
+        <table class="tabla-resultados">
+          <thead>
+            <tr>
+              <th>RFC</th>
+              <th>Nombre</th>
+              <th>Puesto</th>
+              <th>Entes Duplicados</th>
+              <th>Estatus</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in lista %}
+            <tr>
+              <td>
+                {% if r.rfc %}
+                  <a href="{{ url_for('resultados_por_rfc', rfc=r.rfc) }}" class="link-rfc">{{ r.rfc }}</a>
+                {% else %}
+                  Sin RFC
+                {% endif %}
+              </td>
+              <td>{{ r.nombre or 'Sin nombre' }}</td>
+              <td>{{ r.puesto or 'Sin puesto' }}</td>
+              <td>
+                {% if r.entes %}
+                  {% for ente_dup in r.entes %}
+                    {% set estado_color = (
+                      'verde' if r.estado == 'Solventado' else
+                      'rojo' if r.estado == 'No Solventado' else 'gris'
+                    ) %}
+                    <span class="tag-ente {{ estado_color }}">{{ ente_dup }}</span>
+                  {% endfor %}
+                {% else %}
+                  <span class="tag-ente gris">Sin entes duplicados</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if r.estado == 'Solventado' %}
+                  <span class="estado-solventado">Solventado</span>
+                {% elif r.estado == 'No Solventado' %}
+                  <span class="estado-no-solventado">No Solventado</span>
+                {% else %}
+                  <span class="estado-sin-valoracion">Sin valoración</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     {% endfor %}
   {% else %}
     <p class="msg-vacio">No hay resultados para mostrar.</p>

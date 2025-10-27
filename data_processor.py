@@ -14,7 +14,10 @@ class DataProcessor:
     def __init__(self):
         self.column_cache = {}
         self.db = DatabaseManager("scil.db")
-        self.mapa_siglas = self.db.get_mapa_siglas()  # {'CEAS': 'ENTE_49806', ...}
+        # {'CEAS': 'ENTE_49806', ...}
+        self.mapa_siglas = self.db.get_mapa_siglas()
+        # cache inverso para obtener siglas/nombres desde clave
+        self.mapa_inverso = self.db.get_mapa_claves_inverso()  # {'ENTE_49806': 'CEAS'}
 
     # ----------------------------------------------------
     # LIMPIEZA / NORMALIZACIÓN
@@ -41,11 +44,15 @@ class DataProcessor:
         if not etiqueta:
             return None
         val = str(etiqueta).strip().upper()
-        # Buscar en mapa de siglas
         if val in self.mapa_siglas:
             return self.mapa_siglas[val]
-        # Buscar por nombre o clave directamente
         return self.db.normalizar_ente_clave(val, self.mapa_siglas)
+
+    def obtener_sigla_o_nombre(self, clave_ente):
+        """Devuelve sigla si existe, si no nombre, si no clave."""
+        if not clave_ente:
+            return ""
+        return self.mapa_inverso.get(clave_ente, clave_ente)
 
     # ----------------------------------------------------
     # PROCESAMIENTO PRINCIPAL
@@ -62,24 +69,21 @@ class DataProcessor:
         for f in fileobjs:
             nombre_archivo = getattr(f, "name", "archivo_memoria.xlsx")
             print(f"🔹 Analizando {nombre_archivo}")
-
             xl = pd.ExcelFile(f)
 
             for sheet in xl.sheet_names:
-                ente_label = sheet.strip().upper()  # El nombre de la hoja es el ENTE o sigla
+                ente_label = sheet.strip().upper()
                 clave_ente = self.normalizar_ente_clave(ente_label)
                 if not clave_ente:
                     print(f"⚠️  Hoja {ente_label} omitida (no coincide con ningún ente registrado).")
                     continue
 
                 df = xl.parse(sheet).rename(columns=lambda x: str(x).strip().upper().replace(" ", "_"))
-
                 columnas_necesarias = {"RFC", "NOMBRE", "PUESTO", "FECHA_ALTA", "FECHA_BAJA"}
                 if not columnas_necesarias.issubset(df.columns):
                     print(f"⚠️  Hoja {ente_label} omitida (faltan columnas base).")
                     continue
 
-                # Solo tomar QNA1–QNA12 (ignorar QNA12E u otras)
                 qnas = [c for c in df.columns if re.match(r"^QNA([1-9]|1[0-2])$", c)]
                 if not qnas:
                     print(f"⚠️  Hoja {ente_label} sin quincenas válidas.")
@@ -90,9 +94,8 @@ class DataProcessor:
                     rfc = self.limpiar_rfc(row.get("RFC"))
                     if not rfc:
                         continue
-
                     entes_rfc[rfc].append({
-                        "ente": clave_ente,  # ← usamos la CLAVE
+                        "ente": clave_ente,
                         "nombre": str(row.get("NOMBRE", "")).strip(),
                         "puesto": str(row.get("PUESTO", "")).strip(),
                         "fecha_ingreso": self.limpiar_fecha(row.get("FECHA_ALTA")),
@@ -101,7 +104,6 @@ class DataProcessor:
                         "monto": row.get("TOT_NETO"),
                     })
                     validos += 1
-
                 print(f"   → {ente_label} ({clave_ente}): {validos} registros válidos")
 
         resultados = self._cruces_quincenales(entes_rfc)
@@ -119,6 +121,8 @@ class DataProcessor:
 
     def _cruces_quincenales(self, entes_rfc):
         hallazgos = []
+        año_actual = datetime.now().year
+
         for rfc, registros in entes_rfc.items():
             if len(registros) < 2:
                 continue
@@ -134,11 +138,13 @@ class DataProcessor:
                     hallazgos.append({
                         "rfc": rfc,
                         "nombre": activos[0].get("nombre", ""),
-                        "entes": entes_activos,  # ← todas CLAVES ENTE_#####
-                        "fecha_comun": qna,
+                        "entes": entes_activos,   # todas CLAVES ENTE_#####
+                        "fecha_comun": f"{año_actual}Q{qna[-2:]}",  # formato 2025Q01
                         "tipo_patron": "CRUCE_ENTRE_ENTES_QNA",
                         "descripcion": f"El trabajador tiene registros activos en la quincena {qna} en más de un ente.",
-                        "registros": activos
+                        "registros": activos,
+                        "estado": "Sin valoración",
+                        "solventacion": ""
                     })
         return hallazgos
 

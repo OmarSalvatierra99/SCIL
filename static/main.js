@@ -1,12 +1,12 @@
 // ===========================================================
 // SASP - Sistema de Auditoría de Servicios Personales
-// Script principal unificado: carga de archivos y gestión de catálogos
+// Script principal unificado (UI + lógica funcional)
 // ===========================================================
 
 document.addEventListener("DOMContentLoaded", () => {
 
   // ===========================================================
-  // SECCIÓN: CARGA DE ARCHIVOS (Dashboard)
+  // DASHBOARD: Carga de archivos de nómina
   // ===========================================================
   const form = document.getElementById("uploadForm");
   if (form) {
@@ -24,8 +24,8 @@ document.addEventListener("DOMContentLoaded", () => {
     uploadArea.addEventListener("click", () => input.click());
     uploadArea.addEventListener("dragover", (e) => {
       e.preventDefault();
-      uploadArea.style.borderColor = "var(--color-accent)";
-      uploadArea.style.background = "rgba(37,99,235,0.05)";
+      uploadArea.style.borderColor = "var(--color-primary)";
+      uploadArea.style.background = "rgba(0,76,109,0.05)";
     });
     uploadArea.addEventListener("dragleave", () => {
       uploadArea.style.borderColor = "var(--color-border)";
@@ -33,8 +33,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     uploadArea.addEventListener("drop", (e) => {
       e.preventDefault();
-      uploadArea.style.borderColor = "var(--color-border)";
-      uploadArea.style.background = "var(--color-bg)";
       input.files = e.dataTransfer.files;
       handleUpload(input.files);
     });
@@ -46,10 +44,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const formData = new FormData();
       for (const file of files) {
-        if (!/\.(xlsx|xls)$/i.test(file.name)) {
-          showMessage(`Archivo no válido: ${file.name}`, true);
-          return;
-        }
+        if (!/\.(xlsx|xls)$/i.test(file.name))
+          return showMessage(`Archivo no válido: ${file.name}`, true);
         formData.append("files", file);
       }
 
@@ -94,93 +90,64 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ===========================================================
-  // SECCIÓN: CATÁLOGOS (Entes y Municipios)
+  // CATÁLOGOS: Pestañas Entes / Municipios
   // ===========================================================
-  const formEnte = document.getElementById("formEnte");
-  const formMun = document.getElementById("formMun");
+  const tabs = document.querySelectorAll(".tab");
+  const contents = document.querySelectorAll(".tab-content");
 
-  if (formEnte) {
-    formEnte.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const body = {
-        nombre: document.getElementById("enteNombre").value.trim(),
-        siglas: document.getElementById("enteSiglas").value.trim(),
-        clasificacion: document.getElementById("enteClasif").value.trim(),
-        ambito: document.getElementById("enteAmbito").value,
-        activo: true
-      };
-      const res = await fetch("/catalogos/entes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
+  if (tabs.length) {
+    tabs.forEach(tab => {
+      tab.addEventListener("click", () => {
+        tabs.forEach(t => t.classList.remove("active"));
+        contents.forEach(c => c.classList.remove("active"));
+        tab.classList.add("active");
+        document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
       });
-      const data = await res.json();
-      alert(data.mensaje || (data.ok ? "Ente agregado" : data.error));
-      location.reload();
     });
   }
 
-  if (formMun) {
-    formMun.addEventListener("submit", async (e) => {
+  // ===========================================================
+  // SOLVENTACIÓN: Guardar estatus (Solventado / No / Sin valoración)
+  // ===========================================================
+  const formSolv = document.getElementById("solventacionForm");
+  if (formSolv) {
+    formSolv.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const body = {
-        nombre: document.getElementById("munNombre").value.trim(),
-        siglas: document.getElementById("munSiglas").value.trim(),
-        clasificacion: document.getElementById("munClasif").value.trim(),
-        activo: true
-      };
-      const res = await fetch("/catalogos/municipios", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      });
-      const data = await res.json();
-      alert(data.mensaje || (data.ok ? "Municipio agregado" : data.error));
-      location.reload();
+
+      const rfc = "{{ rfc }}";
+      const estado = document.getElementById("estado").value;
+      const solventacion = document.getElementById("solventacion").value.trim();
+      const confirmacion = document.getElementById("confirmacion");
+
+      if (!estado) {
+        setMsg("Selecciona un estatus antes de guardar.", true);
+        return;
+      }
+
+      const body = { rfc, estado, solventacion };
+      try {
+        const res = await fetch("/actualizar_estado", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+
+        if (data.error) setMsg("❌ Error: " + data.error, true);
+        else {
+          setMsg("✅ " + (data.mensaje || "Registro actualizado correctamente."), false);
+          setTimeout(() => window.location.href = `/resultados/${rfc}`, 1500);
+        }
+      } catch (err) {
+        setMsg("Error de red: " + err.message, true);
+      }
+
+      function setMsg(msg, error) {
+        confirmacion.textContent = msg;
+        confirmacion.className = "confirmacion " + (error ? "error" : "ok");
+        confirmacion.style.display = "block";
+      }
     });
   }
-
-  document.querySelectorAll(".btn-save-ente").forEach((btn) => {
-    btn.addEventListener("click", async (e) => {
-      const row = e.target.closest("tr");
-      const cells = row.querySelectorAll("td");
-      const body = {
-        nombre: cells[1].innerText.trim(),
-        siglas: cells[2].innerText.trim(),
-        clasificacion: cells[3].innerText.trim(),
-        ambito: cells[4].innerText.trim(),
-        activo: row.querySelector("input[type='checkbox']").checked ? 1 : 0
-      };
-      const clave = btn.dataset.clave;
-      const res = await fetch(`/catalogos/entes/${clave}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      });
-      const data = await res.json();
-      alert(data.ok ? "Actualizado correctamente" : data.error);
-    });
-  });
-
-  document.querySelectorAll(".btn-save-mun").forEach((btn) => {
-    btn.addEventListener("click", async (e) => {
-      const row = e.target.closest("tr");
-      const cells = row.querySelectorAll("td");
-      const body = {
-        nombre: cells[1].innerText.trim(),
-        siglas: cells[2].innerText.trim(),
-        clasificacion: cells[3].innerText.trim(),
-        activo: row.querySelector("input[type='checkbox']").checked ? 1 : 0
-      };
-      const clave = btn.dataset.clave;
-      const res = await fetch(`/catalogos/municipios/${clave}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      });
-      const data = await res.json();
-      alert(data.ok ? "Actualizado correctamente" : data.error);
-    });
-  });
 });
 
