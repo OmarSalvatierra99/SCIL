@@ -1,34 +1,136 @@
 {% extends "base.html" %}
-{% block title %}Solventación{% endblock %}
+{% block title %}Solventación de Caso{% endblock %}
 
 {% block content %}
 <div class="solventacion-container">
-  <h2>Solventación para RFC {{ rfc }}</h2>
+  <div class="header-flex">
+    <h2>Solventación de Posible Duplicidad</h2>
+    <span class="subtitle">Actualiza el estado de la revisión</span>
+  </div>
 
-  {% if not session.get('autenticado') %}
-    <p class="msg-vacio">⚠️ No autorizado.</p>
-  {% else %}
-    <form id="solventacionForm">
-      <label for="estado">Estatus de revisión:</label>
+  <div class="info-rfc">
+    <p><strong>RFC:</strong> {{ rfc }}</p>
+    <p><strong>Nombre:</strong> {{ info.nombre or 'Sin nombre' }}</p>
+  </div>
+
+  <form id="solventacionForm" data-rfc="{{ rfc }}">
+    <div class="form-group">
+      <label for="estado">Estado de valoración:</label>
       <select id="estado" name="estado" required>
-        <option value="">Selecciona estatus...</option>
-        <option value="Solventado">Solventado</option>
-        <option value="No Solventado">No Solventado</option>
-        <option value="Sin valoración">Sin valoración</option>
+        <option value="">Selecciona estado...</option>
+        <option value="Solventado" {% if info.estado == 'Solventado' %}selected{% endif %}>Solventado</option>
+        <option value="No Solventado" {% if info.estado == 'No Solventado' %}selected{% endif %}>No Solventado</option>
+        <option value="Sin valoración" {% if info.estado == 'Sin valoración' %}selected{% endif %}>Sin valoración</option>
       </select>
+    </div>
 
-      <label for="solventacion">Observación o evidencia:</label>
-      <textarea id="solventacion" name="solventacion"
-        placeholder="Describe brevemente la observación, agrega enlace o evidencia...">{{ solventacion or '' }}</textarea>
+    <div class="form-group">
+      <label for="solventacion">Comentarios o justificación:</label>
+      <textarea id="solventacion" name="solventacion" rows="4" placeholder="Describe brevemente la razón de la solventación...">{{ info.solventacion or '' }}</textarea>
+    </div>
 
-      <div class="acciones">
-        <button type="submit" class="btn btn-primary">💾 Guardar</button>
-        <a href="{{ url_for('resultados_por_rfc', rfc=rfc) }}" class="btn btn-secondary">← Regresar</a>
-      </div>
+    <div class="btn-area">
+      <button type="submit" class="btn btn-primary">💾 Guardar cambios</button>
+      <a href="{{ url_for('resultados_por_rfc', rfc=rfc) }}" class="btn btn-secondary">← Regresar</a>
+    </div>
 
-      <div id="confirmacion" class="confirmacion"></div>
-    </form>
-  {% endif %}
+    <p id="confirmacion" class="confirmacion" style="display:none;"></p>
+  </form>
 </div>
+
+<style>
+  .solventacion-container {
+    max-width: 780px;
+    margin: 2rem auto;
+    padding: 2rem;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+  }
+
+  .header-flex {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 1rem;
+  }
+
+  .subtitle {
+    font-size: 0.9rem;
+    color: #666;
+  }
+
+  .info-rfc {
+    background: #f7f7f7;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+  }
+
+  form .form-group {
+    margin-bottom: 1.2rem;
+  }
+
+  label {
+    font-weight: 600;
+    display: block;
+    margin-bottom: 0.4rem;
+  }
+
+  select, textarea {
+    width: 100%;
+    padding: 0.6rem;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-size: 1rem;
+  }
+
+  textarea {
+    resize: vertical;
+  }
+
+  .btn-area {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1rem;
+  }
+
+  .btn {
+    padding: 0.6rem 1.4rem;
+    border-radius: 6px;
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .btn-primary {
+    background-color: var(--color-primary);
+    color: #fff;
+    border: none;
+  }
+
+  .btn-secondary {
+    background-color: #eee;
+    color: #333;
+  }
+
+  .confirmacion {
+    margin-top: 1.4rem;
+    padding: 0.8rem;
+    border-radius: 6px;
+    text-align: center;
+    font-weight: 500;
+    display: none;
+  }
+
+  .confirmacion.ok {
+    background: #e8f6e8;
+    color: #207520;
+  }
+
+  .confirmacion.error {
+    background: #ffeaea;
+    color: #a10000;
+  }
+</style>
 {% endblock %}
 

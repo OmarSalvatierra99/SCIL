@@ -6,7 +6,7 @@
 document.addEventListener("DOMContentLoaded", () => {
 
   // ===========================================================
-  // DASHBOARD: Carga de archivos de nómina
+  // DASHBOARD: Carga de archivos
   // ===========================================================
   const form = document.getElementById("uploadForm");
   if (form) {
@@ -53,7 +53,13 @@ document.addEventListener("DOMContentLoaded", () => {
       uploadArea.style.display = "none";
 
       fetch(form.action, { method: "POST", body: formData })
-        .then((res) => res.json())
+        .then(async (res) => {
+          if (!res.ok) {
+            const text = await res.text();
+            throw new Error(`Servidor respondió ${res.status}: ${text.slice(0, 120)}`);
+          }
+          return res.json();
+        })
         .then((data) => {
           progressContainer.style.display = "none";
           uploadArea.style.display = "block";
@@ -73,7 +79,7 @@ document.addEventListener("DOMContentLoaded", () => {
         .catch((err) => {
           progressContainer.style.display = "none";
           uploadArea.style.display = "block";
-          showMessage("Error al procesar los archivos: " + err, true);
+          showMessage("Error al procesar los archivos: " + err.message, true);
         });
     }
 
@@ -90,7 +96,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ===========================================================
-  // CATÁLOGOS: Pestañas Entes / Municipios
+  // CATÁLOGOS: pestañas
   // ===========================================================
   const tabs = document.querySelectorAll(".tab");
   const contents = document.querySelectorAll(".tab-content");
@@ -107,14 +113,14 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ===========================================================
-  // SOLVENTACIÓN: Guardar estatus (Solventado / No / Sin valoración)
+  // SOLVENTACIÓN: actualización de estado
   // ===========================================================
   const formSolv = document.getElementById("solventacionForm");
   if (formSolv) {
     formSolv.addEventListener("submit", async (e) => {
       e.preventDefault();
 
-      const rfc = "{{ rfc }}";
+      const rfc = formSolv.dataset.rfc;
       const estado = document.getElementById("estado").value;
       const solventacion = document.getElementById("solventacion").value.trim();
       const confirmacion = document.getElementById("confirmacion");
@@ -124,16 +130,20 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      const body = { rfc, estado, solventacion };
       try {
         const res = await fetch("/actualizar_estado", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body)
+          body: JSON.stringify({ rfc, estado, solventacion })
         });
-        const data = await res.json();
 
-        if (data.error) setMsg("❌ Error: " + data.error, true);
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(`Servidor respondió ${res.status}: ${text.slice(0, 120)}`);
+        }
+
+        const data = await res.json();
+        if (data.error) setMsg("❌ " + data.error, true);
         else {
           setMsg("✅ " + (data.mensaje || "Registro actualizado correctamente."), false);
           setTimeout(() => window.location.href = `/resultados/${rfc}`, 1500);
