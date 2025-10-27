@@ -54,11 +54,11 @@
           <td>{{ r.fecha_egreso or '-' }}</td>
           <td>
             {% if info.estado == 'Solventado' %}
-              <span class="estado-solventado">Solventado</span>
+              <span class="estado estado-verde">Solventado</span>
             {% elif info.estado == 'No Solventado' %}
-              <span class="estado-no-solventado">No Solventado</span>
+              <span class="estado estado-rojo">No Solventado</span>
             {% else %}
-              <span class="estado-sin-valoracion">Sin valoración</span>
+              <span class="estado estado-gris">Sin valoración</span>
             {% endif %}
           </td>
           <td class="accion">
@@ -80,5 +80,30 @@
     <a href="{{ url_for('reporte_por_ente') }}" class="btn btn-secondary">← Regresar</a>
   </div>
 </div>
+
+<style>
+  .estado {
+    display: inline-block;
+    padding: 0.3rem 0.8rem;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+  .estado-verde {
+    background: #e6f7e6;
+    color: #2b7a2b;
+    border: 1px solid #9dd39d;
+  }
+  .estado-rojo {
+    background: #fdeaea;
+    color: #b30000;
+    border: 1px solid #f2a2a2;
+  }
+  .estado-gris {
+    background: #f3f3f3;
+    color: #555;
+    border: 1px solid #ccc;
+  }
+</style>
 {% endblock %}
 

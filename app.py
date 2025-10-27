@@ -22,11 +22,10 @@ app.secret_key = "ofs_sasp_2025"
 db_manager = DatabaseManager("scil.db")
 
 # -----------------------------------------------------------
-# Middleware con soporte AJAX
+# Middleware
 # -----------------------------------------------------------
 @app.before_request
 def verificar_autenticacion():
-    """Evita acceso sin sesión a rutas protegidas (soporta JSON y vistas normales)."""
     libre = {"login", "static"}
     if request.endpoint not in libre and not session.get("autenticado"):
         if request.is_json or request.headers.get("X-Requested-With") == "XMLHttpRequest":
@@ -37,9 +36,7 @@ def verificar_autenticacion():
 # Utilidades
 # -----------------------------------------------------------
 def _sanitize_text(s):
-    if not s:
-        return ""
-    return str(s).strip().upper().replace("Á","A").replace("É","E").replace("Í","I").replace("Ó","O").replace("Ú","U")
+    return str(s or "").strip().upper()
 
 def _allowed_all(entes_usuario):
     return any(_sanitize_text(e) == "TODOS" for e in entes_usuario)
@@ -63,23 +60,32 @@ def _entes_cache():
     for row in cur.fetchall():
         clave = (row["clave"] or "").strip().upper()
         cache[clave] = {
-            "siglas": (row["siglas"] or "").strip(),
+            "siglas": (row["siglas"] or "").strip().upper(),
             "nombre": (row["nombre"] or "").strip().upper()
         }
     conn.close()
     return cache
 
-def _ente_sigla(clave_o_nombre: str) -> str:
+def _ente_match(ente_usuario, clave_lista):
+    euser = _sanitize_text(ente_usuario)
+    for k, data in _entes_cache().items():
+        if euser in {k, data["siglas"], data["nombre"]}:
+            for c in clave_lista:
+                if _sanitize_text(c) in {k, data["siglas"], data["nombre"]}:
+                    return True
+    return False
+
+def _ente_sigla(clave_o_nombre):
     if not clave_o_nombre:
         return ""
-    s = str(clave_o_nombre).strip().upper()
-    c = _entes_cache()
-    if s in c:
-        return c[s]["siglas"] or c[s]["nombre"] or s
+    s = _sanitize_text(clave_o_nombre)
+    for k, data in _entes_cache().items():
+        if s in {k, data["siglas"], data["nombre"]}:
+            return data["siglas"] or data["nombre"] or s
     return s
 
 # -----------------------------------------------------------
-# LOGIN / LOGOUT
+# LOGIN
 # -----------------------------------------------------------
 @app.route("/", methods=["GET", "POST"])
 def login():
@@ -87,28 +93,25 @@ def login():
         usuario = request.form.get("usuario", "").strip()
         clave = request.form.get("clave", "").strip()
         user = db_manager.get_usuario(usuario, clave)
+        if not user:
+            return render_template("login.html", error="Credenciales inválidas")
 
-        if user:
-            session["usuario"] = user["usuario"]
-            session["nombre"] = user["nombre"]
+        session["usuario"] = user["usuario"]
+        session["nombre"] = user["nombre"]
+        entes_str = user["entes"]
+        if isinstance(entes_str, str):
+            entes_list = [e.strip().upper() for e in entes_str.split(",") if e.strip()]
+        elif isinstance(entes_str, list):
+            entes_list = [str(e).strip().upper() for e in entes_str]
+        else:
+            entes_list = []
 
-            entes_str = user["entes"]
-            if isinstance(entes_str, str):
-                entes_list = [e.strip().upper() for e in entes_str.split(",") if e.strip()]
-            elif isinstance(entes_str, list):
-                entes_list = [str(e).strip().upper() for e in entes_str]
-            else:
-                entes_list = []
-
-            if user["usuario"].lower() in ["odilia", "victor"]:
-                session["entes"] = ["TODOS"]
-            else:
-                session["entes"] = entes_list
-
-            session["autenticado"] = True
-            return redirect(url_for("dashboard"))
-
-        return render_template("login.html", error="Credenciales inválidas")
+        if user["usuario"].lower() in ["odilia", "victor"]:
+            session["entes"] = ["TODOS"]
+        else:
+            session["entes"] = entes_list
+        session["autenticado"] = True
+        return redirect(url_for("dashboard"))
     return render_template("login.html")
 
 @app.route("/logout")
@@ -145,17 +148,14 @@ def upload_laboral():
                 rfc = str(row.get("RFC", "")).strip().upper()
                 if not rfc:
                     continue
-                nombre = str(row.get("NOMBRE", "")).strip()
-                ente = str(row.get("ENTE", "")).strip()
-                puesto = str(row.get("PUESTO", "")).strip()
                 resultado = {
                     "rfc": rfc,
-                    "nombre": nombre,
-                    "puesto": puesto,
-                    "entes": [ente] if ente else [],
+                    "nombre": str(row.get("NOMBRE", "")).strip(),
+                    "puesto": str(row.get("PUESTO", "")).strip(),
+                    "entes": [str(row.get("ENTE", "")).strip()],
                     "registros": [{
-                        "ente": ente,
-                        "puesto": puesto,
+                        "ente": str(row.get("ENTE", "")).strip(),
+                        "puesto": str(row.get("PUESTO", "")).strip(),
                         "monto": row.get("TOTAL", ""),
                         "qnas": row.get("QUINCENA", ""),
                         "fecha_ingreso": row.get("FECHA_INGRESO", ""),
@@ -170,11 +170,7 @@ def upload_laboral():
         except Exception as e:
             return jsonify({"error": f"Error procesando {nombre_archivo}: {e}"})
 
-    return jsonify({
-        "mensaje": "Procesamiento completado",
-        "total_resultados": total_resultados,
-        "nuevos": nuevos
-    })
+    return jsonify({"mensaje": "Procesamiento completado", "total_resultados": total_resultados, "nuevos": nuevos})
 
 # -----------------------------------------------------------
 # RESULTADOS AGRUPADOS
@@ -190,20 +186,18 @@ def reporte_por_ente():
     for r in resultados:
         entes_reg = list(set(r.get("entes", []) or ["Sin Ente"]))
         for e in entes_reg:
-            if not (_allowed_all(entes_usuario) or e.strip().upper() in [eu.strip().upper() for eu in entes_usuario]):
+            if not (_allowed_all(entes_usuario) or any(_ente_match(eu, [e]) for eu in entes_usuario)):
                 continue
 
             cur.execute("SELECT siglas, nombre FROM entes WHERE clave=?", (e,))
             row = cur.fetchone()
-            ente_nombre = row["siglas"] or row["nombre"] if row else e
+            ente_nombre = (row["siglas"] or row["nombre"]) if row else e
             agrupado.setdefault(ente_nombre, {})
 
             rfc = r.get("rfc")
             puesto = (
                 r.get("puesto")
-                or ", ".join({reg.get("puesto", "").strip()
-                              for reg in (r.get("registros") or [])
-                              if reg.get("puesto")})
+                or ", ".join({reg.get("puesto", "").strip() for reg in (r.get("registros") or []) if reg.get("puesto")})
                 or "Sin puesto"
             )
 
@@ -259,7 +253,6 @@ def solventacion_detalle(rfc):
 # -----------------------------------------------------------
 @app.route("/actualizar_estado", methods=["POST"])
 def actualizar_estado():
-    """Actualiza el estado y comentario de solventación vía AJAX."""
     data = request.get_json(silent=True) or {}
     rfc = data.get("rfc")
     estado = data.get("estado")
@@ -270,10 +263,7 @@ def actualizar_estado():
 
     try:
         filas = db_manager.actualizar_solventacion(rfc, estado, comentario)
-        return jsonify({
-            "mensaje": f"Registro actualizado ({filas} filas)",
-            "estatus": estado
-        })
+        return jsonify({"mensaje": f"Registro actualizado ({filas} filas)", "estatus": estado})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -282,17 +272,20 @@ def actualizar_estado():
 # -----------------------------------------------------------
 @app.route("/exportar_por_ente")
 def exportar_por_ente():
-    ente_sel = request.args.get("ente")
+    ente_sel = request.args.get("ente", "").strip()
     if not ente_sel:
         return jsonify({"error": "No se seleccionó un ente"}), 400
 
-    ente_target = ente_sel.strip().upper()
     resultados, _ = db_manager.obtener_resultados_paginados("laboral", None, 1, 100000)
-    rows = []
+    seen, rows = set(), []
     for r in resultados:
-        if not any(ente_target == (e or "").upper() for e in (r.get("entes") or [])):
+        if not any(_ente_match(ente_sel, [e]) for e in (r.get("entes") or [])):
             continue
         for reg in (r.get("registros") or [{}]):
+            key = (r.get("rfc"), reg.get("fecha_ingreso"), reg.get("fecha_egreso"), reg.get("monto"))
+            if key in seen:
+                continue
+            seen.add(key)
             rows.append({
                 "RFC": r.get("rfc"),
                 "Nombre": r.get("nombre"),
@@ -300,7 +293,7 @@ def exportar_por_ente():
                 "Fecha Alta": reg.get("fecha_ingreso"),
                 "Fecha Baja": reg.get("fecha_egreso"),
                 "Monto": reg.get("monto"),
-                "Entes incompatibilidad": ", ".join([_ente_sigla(e) for e in (r.get("entes") or [])]),
+                "Entes incompatibilidad": ", ".join(sorted({_ente_sigla(e) for e in (r.get("entes") or [])})),
                 "Estatus": _estatus_label(r.get("estado"))
             })
 
@@ -321,9 +314,13 @@ def exportar_por_ente():
 @app.route("/exportar_general")
 def exportar_excel_general():
     resultados, _ = db_manager.obtener_resultados_paginados("laboral", None, 1, 100000)
-    rows = []
+    seen, rows = set(), []
     for r in resultados:
         for reg in (r.get("registros") or [{}]):
+            key = (r.get("rfc"), reg.get("fecha_ingreso"), reg.get("fecha_egreso"), reg.get("monto"))
+            if key in seen:
+                continue
+            seen.add(key)
             rows.append({
                 "RFC": r.get("rfc"),
                 "Nombre": r.get("nombre"),
@@ -331,7 +328,7 @@ def exportar_excel_general():
                 "Fecha Alta": reg.get("fecha_ingreso"),
                 "Fecha Baja": reg.get("fecha_egreso"),
                 "Monto": reg.get("monto"),
-                "Entes incompatibilidad": ", ".join([_ente_sigla(e) for e in (r.get("entes") or [])]),
+                "Entes incompatibilidad": ", ".join(sorted({_ente_sigla(e) for e in (r.get("entes") or [])})),
                 "Estatus": _estatus_label(r.get("estado"))
             })
 

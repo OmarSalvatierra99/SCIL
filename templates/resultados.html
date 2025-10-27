@@ -8,6 +8,16 @@
     <span class="subtitle">Consulta de posibles duplicidades detectadas</span>
   </div>
 
+  <!-- LEYENDA DE SEMÁFORO -->
+  <div class="semaforo-info">
+    <h3>🟢🟡🔴 Semáforo de Estado</h3>
+    <ul>
+      <li><span class="tag-estado verde"></span> <strong>Solventado:</strong> Caso revisado y aclarado correctamente.</li>
+      <li><span class="tag-estado rojo"></span> <strong>No Solventado:</strong> No acredito y justifico la incompatibilidad.</li>
+      <li><span class="tag-estado gris"></span> <strong>Sin valoración:</strong> Caso pendiente de revisión por el auditor correspondiente.</li>
+    </ul>
+  </div>
+
   <!-- BOTONES DE EXPORTACIÓN -->
   <div class="export-bar">
     <form action="{{ url_for('exportar_excel_general') }}" method="get" class="form-inline">
@@ -72,5 +82,40 @@
     <p class="msg-vacio">No hay resultados para mostrar.</p>
   {% endif %}
 </div>
+
+<style>
+  .semaforo-info {
+    background: #f9f9f9;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 1rem 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .semaforo-info h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.1rem;
+    color: var(--color-primary);
+  }
+  .semaforo-info ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .semaforo-info li {
+    margin-bottom: 0.4rem;
+    font-size: 0.95rem;
+  }
+  .tag-estado {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+  .tag-estado.verde { background: #3cb371; }
+  .tag-estado.rojo { background: #d9534f; }
+  .tag-estado.gris { background: #bdbdbd; }
+</style>
 {% endblock %}
 
