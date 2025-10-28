@@ -331,9 +331,7 @@ class DatabaseManager:
     def get_solventaciones_por_rfc(self, rfc):
         conn = self._connect()
         cur = conn.cursor()
-        cur.execute("""
-            SELECT ente, estado, comentario FROM solventaciones WHERE rfc=?
-        """, (rfc,))
+        cur.execute("SELECT ente, estado, comentario FROM solventaciones WHERE rfc=?", (rfc,))
         data = {}
         for row in cur.fetchall():
             data[row["ente"]] = {
@@ -346,9 +344,12 @@ class DatabaseManager:
     def actualizar_solventacion(self, rfc, estado, comentario, ente="GENERAL"):
         if not ente:
             ente = "GENERAL"
+        ente = self.normalizar_ente_clave(ente) or ente
         if not estado:
             estado = "Sin valoración"
 
+
+   
         conn = self._connect()
         cur = conn.cursor()
         cur.execute("""
@@ -364,9 +365,6 @@ class DatabaseManager:
         conn.close()
         return filas
 
-    # -------------------------------------------------------
-    # Estado por RFC y Ente
-    # -------------------------------------------------------
     def get_estado_rfc_ente(self, rfc, ente_clave):
         if not rfc or not ente_clave:
             return None
@@ -382,9 +380,6 @@ class DatabaseManager:
         conn.close()
         return row[0] if row else None
 
-    # -------------------------------------------------------
-    # Autenticación de usuarios
-    # -------------------------------------------------------
     def get_usuario(self, usuario, clave):
         if not usuario or not clave:
             return None

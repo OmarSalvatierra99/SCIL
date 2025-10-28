@@ -119,51 +119,53 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // ===========================================================
-  // SOLVENTACIÓN — Envío asíncrono
-  // ===========================================================
-  const formSolv = document.getElementById("solventacionForm");
-  if (formSolv) {
-    formSolv.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const rfc = formSolv.dataset.rfc;
-      const estado = document.getElementById("estado").value;
-      const solventacion = document.getElementById("solventacion").value.trim();
-      const confirmacion = document.getElementById("confirmacion");
 
-      if (!estado) {
-        return setMsg("Selecciona un estado antes de guardar.", true);
-      }
+	// ===========================================================
+// SOLVENTACIÓN — Envío asíncrono
+// ===========================================================
+const formSolv = document.getElementById("solventacionForm");
+if (formSolv) {
+  formSolv.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const rfc = formSolv.dataset.rfc;
+    const estado = document.getElementById("estado").value;
+    const solventacion = document.getElementById("solventacion").value.trim();
+    const ente = document.querySelector('input[name="ente"]')?.value || null;
+    const confirmacion = document.getElementById("confirmacion");
 
+    if (!estado) {
+      return setMsg("Selecciona un estado antes de guardar.", true);
+    }
+
+    confirmacion.style.display = "block";
+    confirmacion.textContent = "Guardando...";
+    confirmacion.className = "confirmacion";
+
+    try {
+      const res = await fetch("/actualizar_estado", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rfc, estado, solventacion, ente })
+      });
+      const data = await res.json();
+
+      if (!res.ok || data.error)
+        throw new Error(data.error || `Error del servidor (${res.status})`);
+
+      setMsg("✅ " + (data.mensaje || "Registro actualizado correctamente."), false);
+      setTimeout(() => window.location.href = `/resultados/${rfc}`, 1500);
+
+    } catch (err) {
+      setMsg("❌ Error: " + err.message, true);
+    }
+
+    function setMsg(msg, error) {
+      confirmacion.textContent = msg;
+      confirmacion.className = "confirmacion " + (error ? "error" : "ok");
       confirmacion.style.display = "block";
-      confirmacion.textContent = "Guardando...";
-      confirmacion.className = "confirmacion";
-
-      try {
-        const res = await fetch("/actualizar_estado", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ rfc, estado, solventacion })
-        });
-        const data = await res.json();
-
-        if (!res.ok || data.error)
-          throw new Error(data.error || `Error del servidor (${res.status})`);
-
-        setMsg("✅ " + (data.mensaje || "Registro actualizado correctamente."), false);
-        setTimeout(() => window.location.href = `/resultados/${rfc}`, 1500);
-
-      } catch (err) {
-        setMsg("❌ Error: " + err.message, true);
-      }
-
-      function setMsg(msg, error) {
-        confirmacion.textContent = msg;
-        confirmacion.className = "confirmacion " + (error ? "error" : "ok");
-        confirmacion.style.display = "block";
-      }
-    });
-  }
+    }
+  });
+}
 
   // ===========================================================
   // EMPTY PAGE — Acción de volver a resultados

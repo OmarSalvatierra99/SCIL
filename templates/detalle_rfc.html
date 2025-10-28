@@ -53,19 +53,29 @@
           <td>{{ r.fecha_ingreso or '-' }}</td>
           <td>{{ r.fecha_egreso or '-' }}</td>
           <td>
-            {% if info.estado == 'Solventado' %}
-              <span class="estado estado-verde">Solventado</span>
-            {% elif info.estado == 'No Solventado' %}
-              <span class="estado estado-rojo">No Solventado</span>
+            {% if r.estado_ente %}
+              {% if r.estado_ente == 'Solventado' %}
+                <span class="estado estado-verde">Solventado</span>
+              {% elif r.estado_ente == 'No Solventado' %}
+                <span class="estado estado-rojo">No Solventado</span>
+              {% else %}
+                <span class="estado estado-gris">Sin valoración</span>
+              {% endif %}
             {% else %}
-              <span class="estado estado-gris">Sin valoración</span>
+              {% if info.estado == 'Solventado' %}
+                <span class="estado estado-verde">Solventado</span>
+              {% elif info.estado == 'No Solventado' %}
+                <span class="estado estado-rojo">No Solventado</span>
+              {% else %}
+                <span class="estado estado-gris">Sin valoración</span>
+              {% endif %}
             {% endif %}
           </td>
           <td class="accion">
             {% if ns.editable %}
               <button class="btn btn-primary"
-                      onclick="window.location.href='{{ url_for('solventacion_detalle', rfc=rfc) }}'">
-                {% if info.estado == 'Solventado' %}Editar{% else %}Solventar{% endif %}
+                      onclick="window.location.href='{{ url_for('solventacion_detalle', rfc=rfc) }}?ente={{ r.ente }}'">
+                {% if r.estado_ente == 'Solventado' %}Editar{% else %}Solventar{% endif %}
               </button>
             {% else %}
               <span class="bloqueado">Bloqueado</span>

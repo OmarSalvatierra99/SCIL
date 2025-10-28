@@ -13,7 +13,13 @@
     <p><strong>Nombre:</strong> {{ info.nombre or 'Sin nombre' }}</p>
   </div>
 
-  <form id="solventacionForm" data-rfc="{{ rfc }}">
+  <form id="solventacionForm"
+        method="post"
+        action="{{ url_for('solventacion_detalle', rfc=rfc) }}?ente={{ request.args.get('ente') }}"
+        data-rfc="{{ rfc }}">
+    <!-- Captura el ente pasado en la URL -->
+    <input type="hidden" name="ente" value="{{ request.args.get('ente') or info.entes[0] }}">
+
     <div class="form-group">
       <label for="estado">Estado de valoración:</label>
       <select id="estado" name="estado" required>
@@ -25,8 +31,9 @@
     </div>
 
     <div class="form-group">
-      <label for="solventacion">Comentarios o justificación:</label>
-      <textarea id="solventacion" name="solventacion" rows="4" placeholder="Describe brevemente la razón de la solventación...">{{ info.solventacion or '' }}</textarea>
+      <label for="comentario">Comentarios o justificación:</label>
+      <textarea id="solventacion" name="comentario" rows="4"
+        placeholder="Describe brevemente la razón de la solventación...">{{ info.solventacion or '' }}</textarea>
     </div>
 
     <div class="btn-area">
