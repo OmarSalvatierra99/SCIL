@@ -179,6 +179,7 @@ def upload_laboral():
 # -----------------------------------------------------------
 # RESULTADOS AGRUPADOS
 # -----------------------------------------------------------
+
 @app.route("/resultados")
 def reporte_por_ente():
     resultados, _ = db_manager.obtener_resultados_paginados("laboral", None, 1, 10000)
@@ -207,16 +208,26 @@ def reporte_por_ente():
                     "nombre": r["nombre"],
                     "puesto": puesto,
                     "entes": set(),
-                    "estado": r.get("estado", "Sin valoración")
+                    "estado": r.get("estado", "Sin valoración"),
+                    "estado_entes": {}  # ← NUEVO
                 }
 
             for en in r.get("entes", []):
                 agrupado[ente_nombre][rfc]["entes"].add(_ente_sigla(en))
 
+            # NUEVO: estados individuales por ente
+            mapa_solvs = db_manager.get_solventaciones_por_rfc(r["rfc"])
+            estado_default = r.get("estado", "Sin valoración")
+            for en in r.get("entes", []):
+                clave = db_manager.normalizar_ente_clave(en)
+                est = mapa_solvs.get(clave, {}).get("estado") if mapa_solvs else None
+                agrupado[ente_nombre][rfc]["estado_entes"][_ente_sigla(en)] = est or estado_default
+
     agrupado_final = {k: list(v.values()) for k, v in agrupado.items()}
     if not agrupado_final:
         return render_template("empty.html", mensaje="Sin registros del ente asignado.")
     return render_template("resultados.html", resultados=dict(sorted(agrupado_final.items())))
+
 
 # -----------------------------------------------------------
 # DETALLE POR RFC

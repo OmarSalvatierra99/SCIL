@@ -9,15 +9,14 @@
   </header>
 
   <!-- LEYENDA DE SEMÁFORO -->
-<section class="semaforo-info">
-  <h3>Semáforo de Estado</h3>
-  <ul>
-    <li><span class="estado-text verde">Solventado</span> — Caso revisado y aclarado correctamente.</li>
-    <li><span class="estado-text rojo">No Solventado</span> — No acreditó y justificó la incompatibilidad.</li>
-    <li><span class="estado-text gris">Sin valoración</span> — Pendiente de revisión por el auditor correspondiente.</li>
-  </ul>
-</section>
-
+  <section class="semaforo-info">
+    <h3>Semáforo de Estado</h3>
+    <ul>
+      <li><span class="estado-text verde">Solventado</span> — Caso revisado y aclarado correctamente.</li>
+      <li><span class="estado-text rojo">No Solventado</span> — No acreditó y justificó la incompatibilidad.</li>
+      <li><span class="estado-text gris">Sin valoración</span> — Pendiente de revisión por el auditor correspondiente.</li>
+    </ul>
+  </section>
 
   <!-- BOTONES DE EXPORTACIÓN -->
   <div class="export-bar">
@@ -65,9 +64,10 @@
               <td>
                 {% if r.entes %}
                   {% for ente_dup in r.entes %}
+                    {% set estado_tag = r.estado_entes.get(ente_dup, r.estado) if r.estado_entes is defined else r.estado %}
                     {% set color = (
-                      'verde' if r.estado == 'Solventado' else
-                      'rojo' if r.estado == 'No Solventado' else 'gris'
+                      'verde' if estado_tag == 'Solventado' else
+                      'rojo' if estado_tag == 'No Solventado' else 'gris'
                     ) %}
                     <span class="tag-ente {{ color }}">{{ ente_dup }}</span>
                   {% endfor %}
