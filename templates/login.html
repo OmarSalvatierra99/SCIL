@@ -4,12 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SASP | Acceso</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <link rel="icon" href="{{ url_for('static', filename='ofs_logo.png') }}" type="image/png">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 
 <body class="login-body">
   <div class="login-overlay"></div>
+
   <div class="login-wrapper">
     <div class="login-card">
       <div class="login-header">
@@ -22,23 +23,22 @@
       </div>
 
       {% if error %}
-      <div class="alert-error">{{ error }}</div>
+      <div class="alert-error" role="alert">{{ error }}</div>
       {% endif %}
 
       <form method="POST" autocomplete="off" class="login-form">
         <div class="input-group">
-          <span class="input-icon">👤</span>
+          <span class="input-icon" aria-hidden="true">👤</span>
           <input type="text" name="usuario" class="login-input" placeholder="Usuario" required autofocus autocomplete="username">
         </div>
 
         <div class="input-group">
-          <span class="input-icon">🔒</span>
+          <span class="input-icon" aria-hidden="true">🔒</span>
           <input type="password" name="clave" class="login-input" placeholder="Clave de acceso" required autocomplete="current-password">
         </div>
 
         <button type="submit" class="btn-login">Ingresar al sistema</button>
       </form>
-
     </div>
   </div>
 </body>

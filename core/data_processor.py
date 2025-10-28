@@ -1,27 +1,24 @@
 # ===========================================================
-# data_processor.py — SCIL QNA 2025 / Auditoría Laboral por Quincenas
-# Versión integrada con claves ENTE_##### desde el catálogo oficial
+# core/data_processor.py — SCIL / SASP 2025
+# Procesamiento de archivos laborales y cruces quincenales
 # ===========================================================
 
 import pandas as pd
 import re
 from datetime import datetime, date
 from collections import defaultdict
-from database import DatabaseManager
+from core.database import DatabaseManager
 
 
 class DataProcessor:
     def __init__(self):
-        self.column_cache = {}
         self.db = DatabaseManager("scil.db")
-        # {'CEAS': 'ENTE_49806', ...}
         self.mapa_siglas = self.db.get_mapa_siglas()
-        # cache inverso para obtener siglas/nombres desde clave
-        self.mapa_inverso = self.db.get_mapa_claves_inverso()  # {'ENTE_49806': 'CEAS'}
+        self.mapa_inverso = self.db.get_mapa_claves_inverso()
 
-    # ----------------------------------------------------
-    # LIMPIEZA / NORMALIZACIÓN
-    # ----------------------------------------------------
+    # -------------------------------------------------------
+    # Limpieza y normalización
+    # -------------------------------------------------------
     def limpiar_rfc(self, rfc):
         if pd.isna(rfc):
             return None
@@ -36,60 +33,47 @@ class DataProcessor:
         s = str(fecha).strip()
         if s.lower() in {"", "nan", "nat", "none", "null"}:
             return None
-        f = pd.to_datetime(s, errors="coerce", dayfirst=False)
+        f = pd.to_datetime(s, errors="coerce", dayfirst=True)
         return f.strftime("%Y-%m-%d") if not pd.isna(f) else None
 
     def normalizar_ente_clave(self, etiqueta):
-        """Convierte sigla/nombre/clave detectada en el Excel a ENTE_#####."""
         if not etiqueta:
             return None
         val = str(etiqueta).strip().upper()
         if val in self.mapa_siglas:
             return self.mapa_siglas[val]
-        return self.db.normalizar_ente_clave(val, self.mapa_siglas)
+        return self.db.normalizar_ente_clave(val)
 
-    def obtener_sigla_o_nombre(self, clave_ente):
-        """Devuelve sigla si existe, si no nombre, si no clave."""
-        if not clave_ente:
-            return ""
-        return self.mapa_inverso.get(clave_ente, clave_ente)
-
-    # ----------------------------------------------------
-    # PROCESAMIENTO PRINCIPAL
-    # ----------------------------------------------------
-    def procesar_archivos(self, fileobjs, from_memory=False):
-        """
-        Procesa uno o varios archivos Excel directamente desde memoria (BytesIO).
-        Cada hoja representa un ENTE.
-        Analiza columnas RFC, NOMBRE, PUESTO, FECHA_ALTA, FECHA_BAJA, QNA1–QNA12, TOT_NETO.
-        """
-        print("📊 Procesando archivos laborales...")
+    # -------------------------------------------------------
+    # Procesamiento principal
+    # -------------------------------------------------------
+    def procesar_archivos(self, archivos):
+        print(f"📊 Procesando {len(archivos)} archivo(s) laborales...")
         entes_rfc = defaultdict(list)
 
-        for f in fileobjs:
-            nombre_archivo = getattr(f, "name", "archivo_memoria.xlsx")
-            print(f"🔹 Analizando {nombre_archivo}")
+        for f in archivos:
+            nombre_archivo = getattr(f, "filename", getattr(f, "name", "archivo.xlsx"))
+            print(f"📘 Leyendo archivo: {nombre_archivo}")
             xl = pd.ExcelFile(f)
 
-            for sheet in xl.sheet_names:
-                ente_label = sheet.strip().upper()
+            for hoja in xl.sheet_names:
+                ente_label = hoja.strip().upper()
                 clave_ente = self.normalizar_ente_clave(ente_label)
                 if not clave_ente:
-                    print(f"⚠️  Hoja {ente_label} omitida (no coincide con ningún ente registrado).")
+                    print(f"⚠️  {ente_label} omitido (no coincide con catálogo).")
                     continue
 
-                df = xl.parse(sheet).rename(columns=lambda x: str(x).strip().upper().replace(" ", "_"))
-                columnas_necesarias = {"RFC", "NOMBRE", "PUESTO", "FECHA_ALTA", "FECHA_BAJA"}
-                if not columnas_necesarias.issubset(df.columns):
-                    print(f"⚠️  Hoja {ente_label} omitida (faltan columnas base).")
+                df = xl.parse(hoja).rename(columns=lambda x: str(x).strip().upper().replace(" ", "_"))
+                columnas_base = {"RFC", "NOMBRE", "PUESTO", "FECHA_ALTA", "FECHA_BAJA"}
+                if not columnas_base.issubset(df.columns):
+                    print(f"⚠️  {ente_label} omitido (faltan columnas base).")
                     continue
 
                 qnas = [c for c in df.columns if re.match(r"^QNA([1-9]|1[0-2])$", c)]
                 if not qnas:
-                    print(f"⚠️  Hoja {ente_label} sin quincenas válidas.")
+                    print(f"⚠️  {ente_label} sin columnas quincenales válidas.")
                     continue
 
-                validos = 0
                 for _, row in df.iterrows():
                     rfc = self.limpiar_rfc(row.get("RFC"))
                     if not rfc:
@@ -103,20 +87,18 @@ class DataProcessor:
                         "qnas": {q: row.get(q) for q in qnas},
                         "monto": row.get("TOT_NETO"),
                     })
-                    validos += 1
-                print(f"   → {ente_label} ({clave_ente}): {validos} registros válidos")
 
         resultados = self._cruces_quincenales(entes_rfc)
-        print(f"📈 {len(resultados)} cruces detectados.")
+        print(f"📈 {len(resultados)} posibles duplicidades detectadas.")
         return resultados
 
-    # ----------------------------------------------------
-    # REGLAS AUDITORAS — CRUCES ENTRE ENTES POR QNA
-    # ----------------------------------------------------
-    def _es_activo(self, v):
-        if pd.isna(v):
+    # -------------------------------------------------------
+    # Cruces entre entes por quincenas
+    # -------------------------------------------------------
+    def _es_activo(self, valor):
+        if pd.isna(valor):
             return False
-        s = str(v).strip().upper()
+        s = str(valor).strip().upper()
         return s not in {"", "0", "0.0", "NO", "N/A", "NA", "NONE"}
 
     def _cruces_quincenales(self, entes_rfc):
@@ -138,10 +120,10 @@ class DataProcessor:
                     hallazgos.append({
                         "rfc": rfc,
                         "nombre": activos[0].get("nombre", ""),
-                        "entes": entes_activos,   # todas CLAVES ENTE_#####
-                        "fecha_comun": f"{año_actual}Q{qna[-2:]}",  # formato 2025Q01
+                        "entes": entes_activos,
+                        "fecha_comun": f"{año_actual}Q{qna[-2:]}",
                         "tipo_patron": "CRUCE_ENTRE_ENTES_QNA",
-                        "descripcion": f"El trabajador tiene registros activos en la quincena {qna} en más de un ente.",
+                        "descripcion": f"Registros activos en la quincena {qna} en más de un ente.",
                         "registros": activos,
                         "estado": "Sin valoración",
                         "solventacion": ""

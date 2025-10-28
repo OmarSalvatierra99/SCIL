@@ -3,50 +3,43 @@
 
 {% block content %}
 <div class="container dashboard">
+
+  <!-- Encabezado -->
   <header class="page-header">
     <h2>Bienvenido(a), {{ nombre }}</h2>
     <p class="subtitle">
-      Cargue uno o varios archivos de nómina por quincena para su análisis.<br>
-      El sistema identificará automáticamente los cruces de personal por RFC y quincena.
+      Cargue los archivos de nómina por quincena para su validación.<br>
+      El sistema detectará automáticamente posibles duplicidades de personal entre entes.
     </p>
   </header>
 
-  <!-- Sección de carga de archivos -->
+  <!-- Área de carga -->
   <section class="upload-section">
     <form id="uploadForm" method="POST" enctype="multipart/form-data" action="{{ url_for('upload_laboral') }}">
-      <div class="upload-area" id="uploadArea" tabindex="0" aria-label="Área para subir archivos de nómina">
-        <div class="upload-icon">📁</div>
+      <div class="upload-area" id="uploadArea" tabindex="0" aria-label="Área para subir archivos Excel">
+        <div class="upload-icon">📂</div>
         <div class="upload-text">
-          <h3>Arrastre o seleccione sus archivos Excel</h3>
-          <p>Formatos permitidos: <strong>XLSX / XLS</strong></p>
+          <h3>Arrastre o seleccione los archivos Excel</h3>
+          <p class="hint">Formatos permitidos: <strong>.xlsx / .xls</strong></p>
         </div>
         <input type="file" id="fileInput" name="files" multiple accept=".xlsx,.xls" hidden>
       </div>
-
-      <div class="upload-footer">
-        <button type="submit" class="btn btn-primary">Procesar Archivos</button>
-      </div>
     </form>
 
-    <!-- Estado de procesamiento -->
+    <!-- Estado del proceso -->
     <div id="uploadStatus" class="upload-status" hidden>
       <div class="spinner"></div>
-      <p>Procesando archivos, por favor espere...</p>
+      <p>Analizando archivos, espere por favor...</p>
     </div>
 
-    <!-- Resultado del procesamiento -->
+    <!-- Resultado -->
     <div id="uploadResult" class="upload-result" hidden>
       <h4>Resultado del análisis</h4>
       <p id="resultMessage"></p>
+      <a href="{{ url_for('reporte_por_ente') }}" class="btn btn-primary">Ver Reporte General</a>
     </div>
   </section>
 
-  <!-- Acceso al reporte general -->
-  <section class="results-minimal">
-    <a href="{{ url_for('reporte_por_ente') }}" class="btn btn-secondary">
-      Ver Reporte por Ente
-    </a>
-  </section>
 </div>
 {% endblock %}
 

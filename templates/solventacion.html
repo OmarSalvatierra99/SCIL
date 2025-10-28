@@ -3,10 +3,10 @@
 
 {% block content %}
 <div class="solventacion-container">
-  <div class="header-flex">
+  <header class="header-flex">
     <h2>Solventación de Posible Duplicidad</h2>
     <span class="subtitle">Actualiza el estado de la revisión</span>
-  </div>
+  </header>
 
   <div class="info-rfc">
     <p><strong>RFC:</strong> {{ rfc }}</p>
@@ -34,103 +34,8 @@
       <a href="{{ url_for('resultados_por_rfc', rfc=rfc) }}" class="btn btn-secondary">← Regresar</a>
     </div>
 
-    <p id="confirmacion" class="confirmacion" style="display:none;"></p>
+    <p id="confirmacion" class="confirmacion"></p>
   </form>
 </div>
-
-<style>
-  .solventacion-container {
-    max-width: 780px;
-    margin: 2rem auto;
-    padding: 2rem;
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
-    border-radius: 12px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
-  }
-
-  .header-flex {
-    display: flex;
-    flex-direction: column;
-    margin-bottom: 1rem;
-  }
-
-  .subtitle {
-    font-size: 0.9rem;
-    color: #666;
-  }
-
-  .info-rfc {
-    background: #f7f7f7;
-    padding: 1rem;
-    border-radius: 8px;
-    margin-bottom: 1.5rem;
-  }
-
-  form .form-group {
-    margin-bottom: 1.2rem;
-  }
-
-  label {
-    font-weight: 600;
-    display: block;
-    margin-bottom: 0.4rem;
-  }
-
-  select, textarea {
-    width: 100%;
-    padding: 0.6rem;
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    font-size: 1rem;
-  }
-
-  textarea {
-    resize: vertical;
-  }
-
-  .btn-area {
-    display: flex;
-    gap: 1rem;
-    margin-top: 1rem;
-  }
-
-  .btn {
-    padding: 0.6rem 1.4rem;
-    border-radius: 6px;
-    text-decoration: none;
-    cursor: pointer;
-  }
-
-  .btn-primary {
-    background-color: var(--color-primary);
-    color: #fff;
-    border: none;
-  }
-
-  .btn-secondary {
-    background-color: #eee;
-    color: #333;
-  }
-
-  .confirmacion {
-    margin-top: 1.4rem;
-    padding: 0.8rem;
-    border-radius: 6px;
-    text-align: center;
-    font-weight: 500;
-    display: none;
-  }
-
-  .confirmacion.ok {
-    background: #e8f6e8;
-    color: #207520;
-  }
-
-  .confirmacion.error {
-    background: #ffeaea;
-    color: #a10000;
-  }
-</style>
 {% endblock %}
 
