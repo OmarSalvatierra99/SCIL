@@ -292,7 +292,94 @@ def actualizar_estado():
         return jsonify({"error": str(e)}), 500
 
 # -----------------------------------------------------------
-# EXPORTACIONES
+# UTIL: construir filas agregadas por (RFC, ENTE_ORIGEN, PUESTO, FECHAS, MONTO)
+#       acumulando QUINCENAS y ENTES INCOMPATIBILIDAD a través de todos los hallazgos
+# -----------------------------------------------------------
+def _construir_filas_export(resultados):
+    agregados = {}  # key -> dict fila
+    for r in resultados:
+        # r representa UN cruce en UNA quincena (DataProcessor genera 1 hallazgo por quincena)
+        # Ej: r["fecha_comun"] = "2025Q03" → qna_num = 3
+        qna_num = None
+        fc = (r.get("fecha_comun") or "").upper()
+        if "Q" in fc:
+            try:
+                qna_num = int(fc.split("Q")[-1])
+            except Exception:
+                qna_num = None
+
+        entes_cruce = r.get("entes") or []  # todos los entes involucrados en esa quincena
+        for reg in (r.get("registros") or []):
+            ente_origen = reg.get("ente") or "Sin Ente"
+            key = (
+                r.get("rfc"),
+                _sanitize_text(ente_origen),
+                reg.get("puesto"),
+                reg.get("fecha_ingreso"),
+                reg.get("fecha_egreso"),
+                reg.get("monto"),
+            )
+            if key not in agregados:
+                agregados[key] = {
+                    "RFC": r.get("rfc"),
+                    "Nombre": r.get("nombre"),
+                    "Puesto": reg.get("puesto"),
+                    "Fecha Alta": reg.get("fecha_ingreso"),
+                    "Fecha Baja": reg.get("fecha_egreso"),
+                    "Total Percepciones": reg.get("monto"),
+                    "Ente Origen": _ente_display(ente_origen),
+                    "_ente_origen_raw": ente_origen,  # para filtros/estado
+                    "_entes_incomp_set": set(),
+                    "_qnas_set": set(),
+                    "_estado_base": _estatus_label(r.get("estado")),
+                }
+            # acumular quincena del cruce
+            if qna_num:
+                agregados[key]["_qnas_set"].add(qna_num)
+
+            # acumular entes incompatibles (todos menos el origen)
+            for e in entes_cruce:
+                if _sanitize_text(e) != _sanitize_text(ente_origen):
+                    agregados[key]["_entes_incomp_set"].add(e)
+
+    # materializar filas finales
+    filas = []
+    for key, item in agregados.items():
+        # Quincenas
+        if len(item["_qnas_set"]) >= 12:
+            quincenas = "Activo en Todo el Ejercicio"
+        elif item["_qnas_set"]:
+            quincenas = ", ".join(str(q) for q in sorted(item["_qnas_set"]))
+        else:
+            quincenas = "N/A"
+
+        # Entes incompatibles (ya excluye origen)
+        entes_incomp = ", ".join(
+            sorted({_ente_sigla(e) for e in item["_entes_incomp_set"]})
+        ) or "Sin otros entes"
+
+        # Estado (da prioridad a solventación por RFC+ente origen si existe)
+        ente_clave = db_manager.normalizar_ente_clave(item["_ente_origen_raw"])
+        est_ente = db_manager.get_estado_rfc_ente(item["RFC"], ente_clave)
+        est_final = est_ente or item["_estado_base"]
+
+        filas.append({
+            "RFC": item["RFC"],
+            "Nombre": item["Nombre"],
+            "Puesto": item["Puesto"],
+            "Fecha Alta": item["Fecha Alta"],
+            "Fecha Baja": item["Fecha Baja"],
+            "Total Percepciones": item["Total Percepciones"],
+            "Ente Origen": item["Ente Origen"],
+            "Entes Incompatibilidad": entes_incomp,
+            "Quincenas": quincenas,
+            "Estatus": est_final,
+        })
+    return filas
+
+
+# -----------------------------------------------------------
+# EXPORTAR POR ENTE (filtra por ENTE ORIGEN)
 # -----------------------------------------------------------
 @app.route("/exportar_por_ente")
 def exportar_por_ente():
@@ -301,36 +388,14 @@ def exportar_por_ente():
         return jsonify({"error": "No se seleccionó un ente"}), 400
 
     resultados, _ = db_manager.obtener_resultados_paginados("laboral", None, 1, 100000)
-    seen, rows = set(), []
-    for r in resultados:
-        if not any(_ente_match(ente_sel, [e]) for e in (r.get("entes") or [])):
-            continue
-        for reg in (r.get("registros") or [{}]):
-            key = (r.get("rfc"), reg.get("fecha_ingreso"), reg.get("fecha_egreso"), reg.get("monto"))
-            if key in seen:
-                continue
-            seen.add(key)
+    filas = _construir_filas_export(resultados)
 
-            # Estado priorizando solventación por ente si existe
-            ente_clave = db_manager.normalizar_ente_clave(reg.get("ente"))
-            est_ente = db_manager.get_estado_rfc_ente(r.get("rfc"), ente_clave)
-            est_final = est_ente or _estatus_label(r.get("estado"))
-
-            rows.append({
-                "RFC": r.get("rfc"),
-                "Nombre": r.get("nombre"),
-                "Puesto": reg.get("puesto"),
-                "Fecha Alta": reg.get("fecha_ingreso"),
-                "Fecha Baja": reg.get("fecha_egreso"),
-                "Monto": reg.get("monto"),
-                "Entes incompatibilidad": ", ".join(sorted({_ente_sigla(e) for e in (r.get("entes") or [])})),
-                "Estatus": est_final
-            })
-
-    if not rows:
+    # Filtrar por Ente Origen seleccionado (acepta sigla/nombre/clave)
+    filas = [f for f in filas if _ente_match(ente_sel, [f["Ente Origen"]])]
+    if not filas:
         return jsonify({"error": "No se encontraron registros para el ente seleccionado."}), 404
 
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame(filas)
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         hoja = f"Ente_{_ente_sigla(ente_sel)}"[:31]
@@ -338,41 +403,25 @@ def exportar_por_ente():
     output.seek(0)
     return send_file(output, download_name=f"SASP_{_ente_sigla(ente_sel)}.xlsx", as_attachment=True)
 
+
+# -----------------------------------------------------------
+# EXPORTAR GENERAL (todas las filas)
+# -----------------------------------------------------------
 @app.route("/exportar_general")
 def exportar_excel_general():
     resultados, _ = db_manager.obtener_resultados_paginados("laboral", None, 1, 100000)
-    seen, rows = set(), []
-    for r in resultados:
-        for reg in (r.get("registros") or [{}]):
-            key = (r["rfc"], reg.get("fecha_ingreso"), reg.get("fecha_egreso"), reg.get("monto"))
-            if key in seen:
-                continue
-            seen.add(key)
-
-            ente_clave = db_manager.normalizar_ente_clave(reg.get("ente"))
-            est_ente = db_manager.get_estado_rfc_ente(r.get("rfc"), ente_clave)
-            est_final = est_ente or _estatus_label(r.get("estado"))
-
-            rows.append({
-                "RFC": r["rfc"],
-                "Nombre": r["nombre"],
-                "Puesto": reg.get("puesto"),
-                "Fecha Alta": reg.get("fecha_ingreso"),
-                "Fecha Baja": reg.get("fecha_egreso"),
-                "Monto": reg.get("monto"),
-                "Entes incompatibilidad": ", ".join(sorted({_ente_sigla(e) for e in (r.get("entes") or [])})),
-                "Estatus": est_final
-            })
-
-    if not rows:
+    filas = _construir_filas_export(resultados)
+    if not filas:
         return jsonify({"error": "Sin datos para exportar."}), 404
 
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame(filas)
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Resultados")
+        df.to_excel(writer, index=False, sheet_name="Resultados_Generales")
     output.seek(0)
     return send_file(output, download_name="SASP_Resultados_Generales.xlsx", as_attachment=True)
+
+
 
 # -----------------------------------------------------------
 # CATÁLOGOS

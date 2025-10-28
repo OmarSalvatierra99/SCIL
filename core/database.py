@@ -6,7 +6,6 @@
 import sqlite3
 import json
 import hashlib
-import pandas as pd
 from pathlib import Path
 
 
@@ -149,7 +148,6 @@ class DatabaseManager:
     # Mapas rápidos de entes
     # -------------------------------------------------------
     def get_mapa_siglas(self):
-        """Devuelve {'SIGLA': 'ENTE_#####'}"""
         conn = self._connect()
         cur = conn.cursor()
         cur.execute("SELECT siglas, clave FROM entes WHERE activo=1")
@@ -161,7 +159,6 @@ class DatabaseManager:
         return mapa
 
     def get_mapa_claves_inverso(self):
-        """Devuelve {'ENTE_#####': 'SIGLA' o 'NOMBRE'}"""
         conn = self._connect()
         cur = conn.cursor()
         cur.execute("SELECT clave, siglas, nombre FROM entes WHERE activo=1")
@@ -293,7 +290,7 @@ class DatabaseManager:
         cur = conn.cursor()
         cur.execute("""
             SELECT datos FROM laboral
-            WHERE rfc = ?
+            WHERE UPPER(json_extract(datos, '$.rfc')) = UPPER(?)
             ORDER BY id DESC
         """, (rfc,))
         rows = cur.fetchall()
@@ -339,12 +336,19 @@ class DatabaseManager:
         """, (rfc,))
         data = {}
         for row in cur.fetchall():
-            data[row["ente"]] = {"estado": row["estado"],
-                                 "comentario": row["comentario"]}
+            data[row["ente"]] = {
+                "estado": row["estado"],
+                "comentario": row["comentario"]
+            }
         conn.close()
         return data
 
     def actualizar_solventacion(self, rfc, estado, comentario, ente="GENERAL"):
+        if not ente:
+            ente = "GENERAL"
+        if not estado:
+            estado = "Sin valoración"
+
         conn = self._connect()
         cur = conn.cursor()
         cur.execute("""
@@ -360,11 +364,10 @@ class DatabaseManager:
         conn.close()
         return filas
 
-        # -------------------------------------------------------
+    # -------------------------------------------------------
     # Estado por RFC y Ente
     # -------------------------------------------------------
     def get_estado_rfc_ente(self, rfc, ente_clave):
-        """Devuelve el estado solventado/no solventado de un RFC en un ente específico"""
         if not rfc or not ente_clave:
             return None
         conn = self._connect()
@@ -383,7 +386,6 @@ class DatabaseManager:
     # Autenticación de usuarios
     # -------------------------------------------------------
     def get_usuario(self, usuario, clave):
-        """Valida usuario y devuelve su información y entes asignados"""
         if not usuario or not clave:
             return None
         conn = self._connect()
