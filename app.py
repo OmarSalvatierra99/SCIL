@@ -302,6 +302,7 @@ def actualizar_estado():
         log.exception("Error en actualizar_estado")
         return jsonify({"error": str(e)}), 500
 
+
 # -----------------------------------------------------------
 # UTIL: construir filas agregadas por (RFC, ENTE_ORIGEN, PUESTO, FECHAS, MONTO)
 #       acumulando QUINCENAS y ENTES INCOMPATIBILIDAD a través de todos los hallazgos
@@ -309,17 +310,7 @@ def actualizar_estado():
 def _construir_filas_export(resultados):
     agregados = {}  # key -> dict fila
     for r in resultados:
-        # r representa UN cruce en UNA quincena (DataProcessor genera 1 hallazgo por quincena)
-        # Ej: r["fecha_comun"] = "2025Q03" → qna_num = 3
-        qna_num = None
-        fc = (r.get("fecha_comun") or "").upper()
-        if "Q" in fc:
-            try:
-                qna_num = int(fc.split("Q")[-1])
-            except Exception:
-                qna_num = None
-
-        entes_cruce = r.get("entes") or []  # todos los entes involucrados en esa quincena
+        entes_cruce = r.get("entes") or []
         for reg in (r.get("registros") or []):
             ente_origen = reg.get("ente") or "Sin Ente"
             key = (
@@ -330,6 +321,7 @@ def _construir_filas_export(resultados):
                 reg.get("fecha_egreso"),
                 reg.get("monto"),
             )
+
             if key not in agregados:
                 agregados[key] = {
                     "RFC": r.get("rfc"),
@@ -339,14 +331,18 @@ def _construir_filas_export(resultados):
                     "Fecha Baja": reg.get("fecha_egreso"),
                     "Total Percepciones": reg.get("monto"),
                     "Ente Origen": _ente_display(ente_origen),
-                    "_ente_origen_raw": ente_origen,  # para filtros/estado
+                    "_ente_origen_raw": ente_origen,
                     "_entes_incomp_set": set(),
                     "_qnas_set": set(),
                     "_estado_base": _estatus_label(r.get("estado")),
                 }
-            # acumular quincena del cruce
-            if qna_num:
-                agregados[key]["_qnas_set"].add(qna_num)
+
+            # acumular quincenas desde reg["qnas"]
+            if isinstance(reg.get("qnas"), dict):
+                for q in reg["qnas"].keys():
+                    qnum = q.replace("QNA", "").strip()
+                    if qnum.isdigit():
+                        agregados[key]["_qnas_set"].add(int(qnum))
 
             # acumular entes incompatibles (todos menos el origen)
             for e in entes_cruce:
@@ -360,7 +356,7 @@ def _construir_filas_export(resultados):
         if len(item["_qnas_set"]) >= 12:
             quincenas = "Activo en Todo el Ejercicio"
         elif item["_qnas_set"]:
-            quincenas = ", ".join(str(q) for q in sorted(item["_qnas_set"]))
+            quincenas = ", ".join(f"QNA{q}" for q in sorted(item["_qnas_set"]))
         else:
             quincenas = "N/A"
 
