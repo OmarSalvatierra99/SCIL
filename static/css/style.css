@@ -597,4 +597,36 @@ footer p {
   border: 1px solid #d6d8d9;
 }
 
+/* ===========================================================
+   SEMÁFORO DE ESTADOS
+   =========================================================== */
+
+.estado-text.verde,
+.tag-ente.verde {
+  background-color: #2ecc71;
+  color: #fff;
+}
+
+.estado-text.rojo,
+.tag-ente.rojo {
+  background-color: #e74c3c;
+  color: #fff;
+}
+
+.estado-text.gris,
+.tag-ente.gris {
+  background-color: #7f8c8d;
+  color: #fff;
+}
+
+/* Etiquetas visuales (entes duplicados) */
+.tag-ente {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: 2px;
+  text-transform: uppercase;
+}
 
