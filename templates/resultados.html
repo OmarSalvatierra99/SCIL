@@ -18,72 +18,112 @@
     </ul>
   </section>
 
-  <!-- BOTONES DE EXPORTACIÓN -->
+  <!-- BARRA DE FILTRO Y EXPORTACIÓN -->
   <div class="export-bar">
-    <form action="{{ url_for('exportar_excel_general') }}" method="get" class="form-inline">
-      <button type="submit" class="btn btn-primary">📄 Exportar General</button>
-    </form>
+    <div class="search-area">
+      <input type="text" id="searchInput" placeholder="🔍 Buscar por RFC o nombre..." />
+    </div>
 
-    <form action="{{ url_for('exportar_por_ente') }}" method="get" class="form-inline">
-      <select name="ente" id="selectEnte" required>
-        <option value="">Selecciona Ente...</option>
+    <form id="filterForm" method="get" class="form-inline">
+      <select name="ente" id="selectEnte" onchange="document.getElementById('filterForm').submit()">
+        <option value="">Todos los Entes...</option>
         {% for ente, data in resultados.items() %}
-          <option value="{{ ente }}">{{ ente }}</option>
+          <option value="{{ ente }}" {% if request.args.get('ente') == ente %}selected{% endif %}>{{ ente }}</option>
         {% endfor %}
       </select>
-      <button type="submit" class="btn btn-secondary">🏛️ Exportar por Ente</button>
+      <button formaction="{{ url_for('exportar_por_ente') }}" class="btn btn-secondary">🏛️ Exportar</button>
+      <button formaction="{{ url_for('exportar_excel_general') }}" class="btn btn-primary">📄 Exportar General</button>
     </form>
   </div>
 
   <!-- TABLAS DE RESULTADOS -->
   {% if resultados %}
     {% for ente, lista in resultados.items() %}
-      <section class="ente-bloque">
-        <div class="ente-nombre">{{ ente }}</div>
-        <table class="tabla-resultados">
-          <thead>
-            <tr>
-              <th>RFC</th>
-              <th>Nombre</th>
-              <th>Puesto</th>
-              <th>Entes Duplicados</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for r in lista %}
-            <tr>
-              <td>
-                {% if r.rfc %}
-                  <a href="{{ url_for('resultados_por_rfc', rfc=r.rfc) }}" class="link-rfc">{{ r.rfc }}</a>
-                {% else %}
-                  Sin RFC
-                {% endif %}
-              </td>
-              <td>{{ r.nombre or 'Sin nombre' }}</td>
-              <td>{{ r.puesto or 'Sin puesto' }}</td>
-              <td>
-                {% if r.entes %}
-                  {% for ente_dup in r.entes %}
-                    {% set estado_tag = r.estado_entes.get(ente_dup, r.estado) if r.estado_entes is defined else r.estado %}
-                    {% set color = (
-                      'verde' if estado_tag == 'Solventado' else
-                      'rojo' if estado_tag == 'No Solventado' else 'gris'
-                    ) %}
-                    <span class="tag-ente {{ color }}">{{ ente_dup }}</span>
-                  {% endfor %}
-                {% else %}
-                  <span class="tag-ente gris">Sin entes duplicados</span>
-                {% endif %}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </section>
+      {% if not request.args.get('ente') or request.args.get('ente') == ente %}
+        <section class="ente-bloque">
+          <div class="ente-nombre">{{ ente }}</div>
+          <table class="tabla-resultados">
+            <thead>
+              <tr>
+                <th>RFC</th>
+                <th>Nombre</th>
+                <th>Puesto</th>
+                <th>Entes Duplicados</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in lista %}
+              <tr class="fila-result">
+                <td>
+                  {% if r.rfc %}
+                    <a href="{{ url_for('resultados_por_rfc', rfc=r.rfc) }}" class="link-rfc">{{ r.rfc }}</a>
+                  {% else %}
+                    Sin RFC
+                  {% endif %}
+                </td>
+                <td>{{ r.nombre or 'Sin nombre' }}</td>
+                <td>{{ r.puesto or 'Sin puesto' }}</td>
+                <td>
+                  {% if r.entes %}
+                    {% for ente_dup in r.entes %}
+                      {% set estado_tag = r.estado_entes.get(ente_dup, r.estado) if r.estado_entes is defined else r.estado %}
+                      {% set color = (
+                        'verde' if estado_tag == 'Solventado' else
+                        'rojo' if estado_tag == 'No Solventado' else 'gris'
+                      ) %}
+                      <span class="tag-ente {{ color }}">{{ ente_dup }}</span>
+                    {% endfor %}
+                  {% else %}
+                    <span class="tag-ente gris">Sin entes duplicados</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </section>
+      {% endif %}
     {% endfor %}
   {% else %}
     <p class="msg-vacio">No hay resultados para mostrar.</p>
   {% endif %}
 </div>
+
+<!-- Script de búsqueda rápida -->
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const input = document.getElementById("searchInput");
+  if (!input) return;
+  input.addEventListener("keyup", () => {
+    const filter = input.value.toLowerCase();
+    const filas = document.querySelectorAll(".fila-result");
+    filas.forEach(row => {
+      const text = row.textContent.toLowerCase();
+      row.style.display = text.includes(filter) ? "" : "none";
+    });
+  });
+});
+</script>
+
+<style>
+.search-area {
+  display: flex;
+  align-items: center;
+  margin-right: 1rem;
+}
+#searchInput {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  min-width: 250px;
+  font-size: 14px;
+  outline: none;
+  transition: all 0.2s ease;
+}
+#searchInput:focus {
+  border-color: #007bff;
+  box-shadow: 0 0 5px rgba(0,123,255,0.3);
+}
+</style>
 {% endblock %}
 
