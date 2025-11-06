@@ -85,7 +85,7 @@ class DataProcessor:
                         "fecha_ingreso": self.limpiar_fecha(row.get("FECHA_ALTA")),
                         "fecha_egreso": self.limpiar_fecha(row.get("FECHA_BAJA")),
                         "qnas": {q: row.get(q) for q in qnas},
-                        "monto": row.get("TOT_NETO"),
+                        "monto": row.get("TOT_PERC"),
                     })
 
         resultados = self._cruces_quincenales(entes_rfc)

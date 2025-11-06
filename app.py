@@ -264,7 +264,7 @@ def solventacion_detalle(rfc):
 
     if request.method == "POST":
         estado = request.form.get("estado")
-        comentario = request.form.get("comentario", "")
+        comentario = request.form.get("solventacion", "")
         ente_post = request.form.get("ente") or ente_sel
         filas = db_manager.actualizar_solventacion(rfc, estado, comentario, ente=ente_post)
         log.info("Solventación rfc=%s ente=%s filas=%s", rfc, ente_post, filas)
@@ -296,6 +296,7 @@ def actualizar_estado():
         log.exception("Error en actualizar_estado")
         return jsonify({"error": str(e)}), 500
 
+# -----------------------------------------------------------
 # -----------------------------------------------------------
 # UTIL: construir filas exportables
 # -----------------------------------------------------------
@@ -340,6 +341,19 @@ def _construir_filas_export(resultados):
                 if _sanitize_text(e) != _sanitize_text(ente_origen):
                     agregados[key]["_entes_incomp_set"].add(e)
 
+    # === Cargar comentarios reales desde la tabla solventaciones ===
+    conn = db_manager._connect()
+    cur = conn.cursor()
+    cur.execute("SELECT rfc, ente, comentario FROM solventaciones")
+    comentarios = cur.fetchall()
+    conn.close()
+
+    mapa_coment = {
+        (c["rfc"], c["ente"]): c["comentario"]
+        for c in comentarios
+    }
+
+    # === Construir filas ===
     filas = []
     for key, item in agregados.items():
         if len(item["_qnas_set"]) >= 12:
@@ -357,6 +371,10 @@ def _construir_filas_export(resultados):
         est_ente = db_manager.get_estado_rfc_ente(item["RFC"], ente_clave)
         est_final = est_ente or item["_estado_base"]
 
+        # Comentario real (si existe en solventaciones)
+        comentario_real = mapa_coment.get((item["RFC"], ente_clave))
+        solventacion_final = comentario_real or item["_solventacion"]
+
         filas.append({
             "RFC": item["RFC"],
             "Nombre": item["Nombre"],
@@ -368,9 +386,10 @@ def _construir_filas_export(resultados):
             "Entes Incompatibilidad": entes_incomp,
             "Quincenas": quincenas,
             "Estatus": est_final,
-            "Solventación": item["_solventacion"]
+            "Solventación": solventacion_final
         })
     return filas
+
 
 # -----------------------------------------------------------
 # EXPORTAR POR ENTE (JSON + Excel)
