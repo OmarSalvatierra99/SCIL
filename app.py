@@ -179,7 +179,6 @@ def upload_laboral():
 # -----------------------------------------------------------
 # RESULTADOS AGRUPADOS
 # -----------------------------------------------------------
-
 @app.route("/resultados")
 def reporte_por_ente():
     resultados, _ = db_manager.obtener_resultados_paginados("laboral", None, 1, 10000)
@@ -209,13 +208,12 @@ def reporte_por_ente():
                     "puesto": puesto,
                     "entes": set(),
                     "estado": r.get("estado", "Sin valoración"),
-                    "estado_entes": {}  # ← NUEVO
+                    "estado_entes": {}
                 }
 
             for en in r.get("entes", []):
                 agrupado[ente_nombre][rfc]["entes"].add(_ente_sigla(en))
 
-            # NUEVO: estados individuales por ente
             mapa_solvs = db_manager.get_solventaciones_por_rfc(r["rfc"])
             estado_default = r.get("estado", "Sin valoración")
             for en in r.get("entes", []):
@@ -228,7 +226,6 @@ def reporte_por_ente():
         return render_template("empty.html", mensaje="Sin registros del ente asignado.")
     return render_template("resultados.html", resultados=dict(sorted(agrupado_final.items())))
 
-
 # -----------------------------------------------------------
 # DETALLE POR RFC
 # -----------------------------------------------------------
@@ -238,8 +235,7 @@ def resultados_por_rfc(rfc):
     if not info:
         return render_template("empty.html", mensaje="No hay registros del trabajador.")
 
-    # Inyectar estados por ente si existen solventaciones específicas
-    mapa_solvs = db_manager.get_solventaciones_por_rfc(rfc)  # {ente_clave: {estado, comentario}}
+    mapa_solvs = db_manager.get_solventaciones_por_rfc(rfc)
     if mapa_solvs and info.get("registros"):
         for reg in info["registros"]:
             ente_clave = db_manager.normalizar_ente_clave(reg.get("ente"))
@@ -247,7 +243,6 @@ def resultados_por_rfc(rfc):
                 reg["estado_ente"] = mapa_solvs[ente_clave]["estado"]
                 reg["comentario_ente"] = mapa_solvs[ente_clave]["comentario"]
 
-        # Estado general: si todos iguales usa uno, si no "Mixto"
         estados_regs = {reg.get("estado_ente") or info.get("estado") for reg in info["registros"]}
         estados_regs = {e for e in estados_regs if e}
         if len(estados_regs) == 1:
@@ -265,7 +260,6 @@ def solventacion_detalle(rfc):
     if not session.get("autenticado"):
         return redirect(url_for("login"))
 
-    # opcional ?ente=ENTE_##### para solventar ese ente en particular
     ente_sel = request.args.get("ente")
 
     if request.method == "POST":
@@ -302,13 +296,11 @@ def actualizar_estado():
         log.exception("Error en actualizar_estado")
         return jsonify({"error": str(e)}), 500
 
-
 # -----------------------------------------------------------
-# UTIL: construir filas agregadas por (RFC, ENTE_ORIGEN, PUESTO, FECHAS, MONTO)
-#       acumulando QUINCENAS y ENTES INCOMPATIBILIDAD a través de todos los hallazgos
+# UTIL: construir filas exportables
 # -----------------------------------------------------------
 def _construir_filas_export(resultados):
-    agregados = {}  # key -> dict fila
+    agregados = {}
     for r in resultados:
         entes_cruce = r.get("entes") or []
         for reg in (r.get("registros") or []):
@@ -335,24 +327,21 @@ def _construir_filas_export(resultados):
                     "_entes_incomp_set": set(),
                     "_qnas_set": set(),
                     "_estado_base": _estatus_label(r.get("estado")),
+                    "_solventacion": r.get("solventacion", "")
                 }
 
-            # acumular quincenas desde reg["qnas"]
             if isinstance(reg.get("qnas"), dict):
                 for q in reg["qnas"].keys():
                     qnum = q.replace("QNA", "").strip()
                     if qnum.isdigit():
                         agregados[key]["_qnas_set"].add(int(qnum))
 
-            # acumular entes incompatibles (todos menos el origen)
             for e in entes_cruce:
                 if _sanitize_text(e) != _sanitize_text(ente_origen):
                     agregados[key]["_entes_incomp_set"].add(e)
 
-    # materializar filas finales
     filas = []
     for key, item in agregados.items():
-        # Quincenas
         if len(item["_qnas_set"]) >= 12:
             quincenas = "Activo en Todo el Ejercicio"
         elif item["_qnas_set"]:
@@ -360,12 +349,10 @@ def _construir_filas_export(resultados):
         else:
             quincenas = "N/A"
 
-        # Entes incompatibles (ya excluye origen)
         entes_incomp = ", ".join(
             sorted({_ente_sigla(e) for e in item["_entes_incomp_set"]})
         ) or "Sin otros entes"
 
-        # Estado (da prioridad a solventación por RFC+ente origen si existe)
         ente_clave = db_manager.normalizar_ente_clave(item["_ente_origen_raw"])
         est_ente = db_manager.get_estado_rfc_ente(item["RFC"], ente_clave)
         est_final = est_ente or item["_estado_base"]
@@ -381,43 +368,34 @@ def _construir_filas_export(resultados):
             "Entes Incompatibilidad": entes_incomp,
             "Quincenas": quincenas,
             "Estatus": est_final,
+            "Solventación": item["_solventacion"]
         })
     return filas
 
-
-
 # -----------------------------------------------------------
-# EXPORTAR POR ENTE (filtra por ENTE ORIGEN y conserva duplicidades)
+# EXPORTAR POR ENTE (JSON + Excel)
 # -----------------------------------------------------------
 @app.route("/exportar_por_ente")
 def exportar_por_ente():
     ente_sel = request.args.get("ente", "").strip()
+    formato = request.args.get("formato", "").lower()
     if not ente_sel:
         return jsonify({"error": "No se seleccionó un ente"}), 400
 
     resultados, _ = db_manager.obtener_resultados_paginados("laboral", None, 1, 100000)
     filas = _construir_filas_export(resultados)
-
-    # Filtrar solo los registros cuyo ente origen coincida con el ente seleccionado
     filas = [f for f in filas if _ente_match(ente_sel, [f["Ente Origen"]])]
     if not filas:
         return jsonify({"error": "No se encontraron registros para el ente seleccionado."}), 404
 
-    df = pd.DataFrame(filas)[[
-        "RFC",
-        "Nombre",
-        "Puesto",
-        "Fecha Alta",
-        "Fecha Baja",
-        "Total Percepciones",
-        "Ente Origen",
-        "Entes Incompatibilidad",
-        "Quincenas",
-        "Estatus"
-    ]]
+    if formato == "json" or request.is_json:
+        return jsonify({"ente": ente_sel, "total_registros": len(filas), "datos": filas})
 
-    # Reordenar para destacar el ente origen y los entes con los que cruza
-    df.sort_values(by=["Ente Origen", "RFC"], inplace=True)
+    df = pd.DataFrame(filas)[[
+        "RFC","Nombre","Puesto","Fecha Alta","Fecha Baja","Total Percepciones",
+        "Ente Origen","Entes Incompatibilidad","Quincenas","Estatus","Solventación"
+    ]]
+    df.sort_values(by=["Ente Origen","RFC"], inplace=True)
 
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -428,52 +406,37 @@ def exportar_por_ente():
     nombre = f"SASP_{_ente_sigla(ente_sel)}_Duplicidades.xlsx"
     return send_file(output, download_name=nombre, as_attachment=True)
 
-
 # -----------------------------------------------------------
-# EXPORTAR GENERAL (incluye todos los entes y sus duplicidades)
+# EXPORTAR GENERAL (JSON + Excel)
 # -----------------------------------------------------------
 @app.route("/exportar_general")
 def exportar_excel_general():
+    formato = request.args.get("formato", "").lower()
     resultados, _ = db_manager.obtener_resultados_paginados("laboral", None, 1, 100000)
     filas = _construir_filas_export(resultados)
     if not filas:
         return jsonify({"error": "Sin datos para exportar."}), 404
 
-    df = pd.DataFrame(filas)[[
-        "RFC",
-        "Nombre",
-        "Puesto",
-        "Fecha Alta",
-        "Fecha Baja",
-        "Total Percepciones",
-        "Ente Origen",
-        "Entes Incompatibilidad",
-        "Quincenas",
-        "Estatus"
-    ]]
+    if formato == "json" or request.is_json:
+        return jsonify({"total_registros": len(filas), "datos": filas})
 
-    # Orden lógico para auditoría: por RFC y luego por Ente Origen
-    df.sort_values(by=["RFC", "Ente Origen"], inplace=True)
+    df = pd.DataFrame(filas)[[
+        "RFC","Nombre","Puesto","Fecha Alta","Fecha Baja","Total Percepciones",
+        "Ente Origen","Entes Incompatibilidad","Quincenas","Estatus","Solventación"
+    ]]
+    df.sort_values(by=["RFC","Ente Origen"], inplace=True)
 
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        # Hoja 1: todos los registros
         df.to_excel(writer, index=False, sheet_name="Duplicidades_Generales")
-
-        # Hoja 2: resumen por ente (cantidad de RFC y cruces)
         resumen = (
-            df.groupby("Ente Origen")
-              .agg(
-                  Total_RFCs=("RFC", "nunique"),
-              )
-              .reset_index()
-              .sort_values("Ente Origen")
+            df.groupby("Ente Origen").agg(Total_RFCs=("RFC","nunique"))
+              .reset_index().sort_values("Ente Origen")
         )
         resumen.to_excel(writer, index=False, sheet_name="Resumen_por_Ente")
 
     output.seek(0)
     return send_file(output, download_name="SASP_Duplicidades_Generales.xlsx", as_attachment=True)
-
 
 # -----------------------------------------------------------
 # CATÁLOGOS
@@ -491,11 +454,11 @@ def catalogos_home():
 def inject_helpers():
     return {"_sanitize_text": _sanitize_text, "db_manager": db_manager}
 
-
 @app.route('/descargar-plantilla')
 def descargar_plantilla():
     ruta = os.path.join(app.root_path, 'static')
     return send_from_directory(ruta, 'Plantilla.xlsx', as_attachment=True)
+
 # -----------------------------------------------------------
 # MAIN
 # -----------------------------------------------------------
