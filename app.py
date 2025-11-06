@@ -252,9 +252,6 @@ def resultados_por_rfc(rfc):
 
     return render_template("detalle_rfc.html", rfc=rfc, info=info)
 
-# -----------------------------------------------------------
-# SOLVENTACIÓN (por RFC o por RFC+Ente)
-# -----------------------------------------------------------
 @app.route("/solventacion/<rfc>", methods=["GET", "POST"])
 def solventacion_detalle(rfc):
     if not session.get("autenticado"):
@@ -273,7 +270,28 @@ def solventacion_detalle(rfc):
     info = db_manager.obtener_resultados_por_rfc(rfc)
     if not info:
         return render_template("empty.html", mensaje="No hay registros para este RFC.")
-    return render_template("solventacion.html", rfc=rfc, info=info)
+
+    # --- Agregar solventación previa (si existe) ---
+    conn = db_manager._connect()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT estado, comentario FROM solventaciones WHERE rfc=? AND ente=?",
+        (rfc, db_manager.normalizar_ente_clave(ente_sel or "GENERAL"))
+    )
+    row = cur.fetchone()
+    conn.close()
+
+    estado_prev = row["estado"] if row else info.get("estado")
+    solventacion_prev = row["comentario"] if row else info.get("solventacion", "")
+
+    return render_template(
+        "solventacion.html",
+        rfc=rfc,
+        info=info,
+        estado_prev=estado_prev,
+        solventacion_prev=solventacion_prev
+    )
+
 
 # -----------------------------------------------------------
 # ACTUALIZAR ESTADO (AJAX)
