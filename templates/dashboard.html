@@ -13,6 +13,13 @@
     </p>
   </header>
 
+ <div class="template-download">
+  <a href="{{ url_for('descargar_plantilla') }}" class="btn btn-success">
+    📥 Descargar plantilla
+  </a>
+</div>
+
+
   <!-- Área de carga -->
   <section class="upload-section">
     <form id="uploadForm" method="POST" enctype="multipart/form-data" action="{{ url_for('upload_laboral') }}">

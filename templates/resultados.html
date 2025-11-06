@@ -32,7 +32,7 @@
         {% endfor %}
       </select>
       <button formaction="{{ url_for('exportar_por_ente') }}" class="btn btn-secondary">🏛️ Exportar</button>
-      <button formaction="{{ url_for('exportar_excel_general') }}" class="btn btn-primary">📄 Exportar General</button>
+      <a href="{{ url_for('exportar_excel_general') }}" class="btn btn-primary">📄 Exportar General</a>
     </form>
   </div>
 

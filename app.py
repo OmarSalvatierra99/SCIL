@@ -6,7 +6,7 @@
 
 from flask import (
     Flask, render_template, request, redirect,
-    url_for, session, jsonify, send_file
+    url_for, session, jsonify, send_file, send_from_directory
 )
 import os
 import logging
@@ -385,8 +385,9 @@ def _construir_filas_export(resultados):
     return filas
 
 
+
 # -----------------------------------------------------------
-# EXPORTAR POR ENTE (filtra por ENTE ORIGEN)
+# EXPORTAR POR ENTE (filtra por ENTE ORIGEN y conserva duplicidades)
 # -----------------------------------------------------------
 @app.route("/exportar_por_ente")
 def exportar_por_ente():
@@ -397,22 +398,39 @@ def exportar_por_ente():
     resultados, _ = db_manager.obtener_resultados_paginados("laboral", None, 1, 100000)
     filas = _construir_filas_export(resultados)
 
-    # Filtrar por Ente Origen seleccionado (acepta sigla/nombre/clave)
+    # Filtrar solo los registros cuyo ente origen coincida con el ente seleccionado
     filas = [f for f in filas if _ente_match(ente_sel, [f["Ente Origen"]])]
     if not filas:
         return jsonify({"error": "No se encontraron registros para el ente seleccionado."}), 404
 
-    df = pd.DataFrame(filas)
+    df = pd.DataFrame(filas)[[
+        "RFC",
+        "Nombre",
+        "Puesto",
+        "Fecha Alta",
+        "Fecha Baja",
+        "Total Percepciones",
+        "Ente Origen",
+        "Entes Incompatibilidad",
+        "Quincenas",
+        "Estatus"
+    ]]
+
+    # Reordenar para destacar el ente origen y los entes con los que cruza
+    df.sort_values(by=["Ente Origen", "RFC"], inplace=True)
+
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        hoja = f"Ente_{_ente_sigla(ente_sel)}"[:31]
+        hoja = f"{_ente_sigla(ente_sel)}"[:31]
         df.to_excel(writer, index=False, sheet_name=hoja)
+
     output.seek(0)
-    return send_file(output, download_name=f"SASP_{_ente_sigla(ente_sel)}.xlsx", as_attachment=True)
+    nombre = f"SASP_{_ente_sigla(ente_sel)}_Duplicidades.xlsx"
+    return send_file(output, download_name=nombre, as_attachment=True)
 
 
 # -----------------------------------------------------------
-# EXPORTAR GENERAL (todas las filas)
+# EXPORTAR GENERAL (incluye todos los entes y sus duplicidades)
 # -----------------------------------------------------------
 @app.route("/exportar_general")
 def exportar_excel_general():
@@ -421,13 +439,40 @@ def exportar_excel_general():
     if not filas:
         return jsonify({"error": "Sin datos para exportar."}), 404
 
-    df = pd.DataFrame(filas)
+    df = pd.DataFrame(filas)[[
+        "RFC",
+        "Nombre",
+        "Puesto",
+        "Fecha Alta",
+        "Fecha Baja",
+        "Total Percepciones",
+        "Ente Origen",
+        "Entes Incompatibilidad",
+        "Quincenas",
+        "Estatus"
+    ]]
+
+    # Orden lógico para auditoría: por RFC y luego por Ente Origen
+    df.sort_values(by=["RFC", "Ente Origen"], inplace=True)
+
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Resultados_Generales")
-    output.seek(0)
-    return send_file(output, download_name="SASP_Resultados_Generales.xlsx", as_attachment=True)
+        # Hoja 1: todos los registros
+        df.to_excel(writer, index=False, sheet_name="Duplicidades_Generales")
 
+        # Hoja 2: resumen por ente (cantidad de RFC y cruces)
+        resumen = (
+            df.groupby("Ente Origen")
+              .agg(
+                  Total_RFCs=("RFC", "nunique"),
+              )
+              .reset_index()
+              .sort_values("Ente Origen")
+        )
+        resumen.to_excel(writer, index=False, sheet_name="Resumen_por_Ente")
+
+    output.seek(0)
+    return send_file(output, download_name="SASP_Duplicidades_Generales.xlsx", as_attachment=True)
 
 
 # -----------------------------------------------------------
@@ -446,6 +491,11 @@ def catalogos_home():
 def inject_helpers():
     return {"_sanitize_text": _sanitize_text, "db_manager": db_manager}
 
+
+@app.route('/descargar-plantilla')
+def descargar_plantilla():
+    ruta = os.path.join(app.root_path, 'static')
+    return send_from_directory(ruta, 'Plantilla.xlsx', as_attachment=True)
 # -----------------------------------------------------------
 # MAIN
 # -----------------------------------------------------------
