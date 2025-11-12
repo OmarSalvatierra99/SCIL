@@ -118,13 +118,31 @@
 <script>
 document.addEventListener("DOMContentLoaded", () => {
   const input = document.getElementById("searchInput");
-  if (!input) return;
+  if (!input) {
+    console.warn("⚠️ searchInput no encontrado");
+    return;
+  }
+
   input.addEventListener("keyup", () => {
-    const filter = input.value.toLowerCase();
-    const filas = document.querySelectorAll(".fila-result");
-    filas.forEach(row => {
-      const text = row.textContent.toLowerCase();
-      row.style.display = text.includes(filter) ? "" : "none";
+    const filter = input.value.toLowerCase().trim();
+    const bloques = document.querySelectorAll(".ente-bloque");
+
+    bloques.forEach(bloque => {
+      const filas = bloque.querySelectorAll(".fila-result");
+      let hayCoincidencias = false;
+
+      filas.forEach(row => {
+        const text = row.textContent.toLowerCase();
+        if (text.includes(filter)) {
+          row.style.display = "";
+          hayCoincidencias = true;
+        } else {
+          row.style.display = "none";
+        }
+      });
+
+      // Ocultar el bloque completo si no hay coincidencias
+      bloque.style.display = hayCoincidencias || filter === "" ? "" : "none";
     });
   });
 });

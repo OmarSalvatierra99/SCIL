@@ -81,7 +81,7 @@ Catalog files expected in `catalogos/`: `Estatales.xlsx`, `Municipales.xlsx`, `U
 
 **Content Hashing**: Uses SHA-256 hashing of JSON-serialized results to prevent duplicate storage of identical analysis results.
 
-**Role-Based Access**: Users with `"TODOS"` in their `entes` field (like "odilia", "victor") see all entities; others only see assigned entities.
+**Role-Based Access**: Users with `"TODOS"` in their `entes` field (like "odilia", "luis", "felipe") see all entities; others only see assigned entities.
 
 ## Database Schema
 

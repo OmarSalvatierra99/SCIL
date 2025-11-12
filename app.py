@@ -38,6 +38,21 @@ data_processor = DataProcessor()  # usa el mismo db_path por defecto
 log.info("Iniciando SCIL | CWD=%s | DB=%s", os.getcwd(), DB_PATH)
 
 # -----------------------------------------------------------
+# Filtros de Jinja2
+# -----------------------------------------------------------
+@app.template_filter('ordenar_quincenas')
+def ordenar_quincenas(qnas):
+    """Ordena quincenas (QNA1, QNA2, ..., QNA24) numéricamente."""
+    import re
+    if not qnas:
+        return []
+    # Extraer número de cada QNA y ordenar
+    def extraer_numero(qna):
+        match = re.search(r'\d+', str(qna))
+        return int(match.group()) if match else 0
+    return sorted(qnas, key=extraer_numero)
+
+# -----------------------------------------------------------
 # Middleware
 # -----------------------------------------------------------
 @app.before_request
@@ -128,7 +143,7 @@ def login():
             "autenticado": True
         })
         entes = user["entes"]
-        session["entes"] = ["TODOS"] if user["usuario"].lower() in {"odilia", "victor", "luis", "felipe"} else entes
+        session["entes"] = ["TODOS"] if user["usuario"].lower() in {"odilia", "luis", "felipe"} else entes
         log.info("Login ok usuario=%s entes=%s", user["usuario"], ",".join(session["entes"]))
         return redirect(url_for("dashboard"))
     return render_template("login.html")

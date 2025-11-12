@@ -123,13 +123,16 @@ class DataProcessor:
                     if not rfc:
                         continue
 
+                    # Solo guardar quincenas activas (no vacías, no 0, no NA)
+                    qnas_activas = {q: row.get(q) for q in qnas if self._es_activo(row.get(q))}
+
                     entes_rfc[rfc].append({
                         "ente": clave_ente,
                         "nombre": str(row.get("NOMBRE", "")).strip(),
                         "puesto": str(row.get("PUESTO", "")).strip(),
                         "fecha_ingreso": self.limpiar_fecha(row.get("FECHA_ALTA")),
                         "fecha_egreso": self.limpiar_fecha(row.get("FECHA_BAJA")),
-                        "qnas": {q: row.get(q) for q in qnas},
+                        "qnas": qnas_activas,
                         "monto": row.get("TOT_PERC"),
                     })
                     registros_validos += 1
