@@ -13,9 +13,8 @@ The system processes Excel files containing employee data from different governm
 ### Environment Setup
 ```bash
 # Activate virtual environment
-source venv/bin/activate  # On Linux/macOS
-# or
-venv\Scripts\activate     # On Windows
+source venv/bin/activate  # Linux/macOS
+venv\Scripts\activate     # Windows
 
 # Install dependencies
 pip install -r requirements.txt
@@ -32,17 +31,14 @@ gunicorn --bind 0.0.0.0:4050 --workers 4 app:app
 
 ### Database Operations
 ```bash
-# Initialize database and seed with base data
+# Initialize database schema and seed with default users
 python core/database.py
 
-# Import catalogs (entities, municipalities, users) from Excel files
+# Import entity/user catalogs from catalogos/*.xlsx
 python importar_catalogos_scil.py
 ```
 
-**Note:** The catalog import script expects Excel files in the `catalogos/` directory:
-- `Estatales.xlsx` - State government entities
-- `Municipales.xlsx` - Municipal entities
-- `Usuarios_SASP_2025.xlsx` - System users
+Catalog files expected in `catalogos/`: `Estatales.xlsx`, `Municipales.xlsx`, `Usuarios_SASP_2025.xlsx`
 
 ## Architecture
 
@@ -111,13 +107,25 @@ python importar_catalogos_scil.py
 **usuarios**: System users with entity-based access control
 - `entes`: Comma-separated list of entity codes or "TODOS" for full access
 
+## Key Application Routes
+
+- `/` - Login page (GET/POST)
+- `/dashboard` - Main dashboard with upload interface
+- `/upload_laboral` - Process Excel file uploads (POST)
+- `/resultados` - View analysis results (filtered by user's entity access)
+- `/resultados/<rfc>` - Detailed employee view with cross-entity activity
+- `/solventacion/<rfc>` - Resolution workflow for marking status per entity
+- `/actualizar_estado` - AJAX endpoint for updating resolution status (POST)
+- `/exportar_por_ente?ente=<name>` - Single-entity Excel export
+- `/exportar_general` - Comprehensive Excel export with summary sheet
+- `/catalogos` - View loaded entities and municipalities
+
 ## Important File Locations
 
-- **Database**: `scil.db` (SQLite, excluded from git)
-- **Upload Template**: `static/Plantilla.xlsx` (downloadable Excel template for users)
-- **Catalogs**: `catalogos/*.xlsx` (entity and user master data)
-- **Templates**: `templates/*.html` (Jinja2 templates for all views)
-- **Logs**: Application uses Python logging (INFO level by default)
+- **Database**: `scil.db` (SQLite, git-ignored)
+- **Upload Template**: `static/Plantilla.xlsx` (downloadable template for users)
+- **Catalogs**: `catalogos/*.xlsx` (master data for entities/users)
+- **Templates**: `templates/*.html` (Jinja2 templates)
 
 ## Environment Variables
 
@@ -126,54 +134,38 @@ python importar_catalogos_scil.py
 
 ## Excel File Format
 
-Input files must follow this structure:
-- **Sheet name**: Entity name (matched against catalog)
+Input files (see `static/Plantilla.xlsx` for template):
+- **Sheet name**: Entity identifier (clave, sigla, or full name from catalog)
 - **Required columns**: `RFC`, `NOMBRE`, `PUESTO`, `FECHA_ALTA`, `FECHA_BAJA`
-- **Optional columns**: `QNA1` through `QNA24` (biweekly period indicators)
-- **Optional column**: `TOT_PERC` (total compensation)
-
-Values in QNA columns indicate employment status:
-- Non-empty/non-zero/not "NA" = active in that period
-- Empty/0/"NA" = inactive
+- **Optional columns**: `QNA1`-`QNA24` (biweekly period flags), `TOT_PERC` (total compensation)
+- **QNA values**: Non-empty/non-zero/"not NA" = active; empty/0/"NA" = inactive
 
 ## Authentication
 
-Default hardcoded users (for initial setup):
-- Username: `odilia` / Password: `odilia2025` (full access)
-- Username: `felipe` / Password: `felipe2025` (full access)
+Session-based authentication with SHA-256 password hashing. Default users (seeded by `core/database.py`):
+- `odilia` / `odilia2025` (full access)
+- `felipe` / `felipe2025` (full access)
 
-**Security Note**: Passwords are SHA-256 hashed before storage. Production deployment should use stronger authentication.
+Additional users imported via `importar_catalogos_scil.py` from `Usuarios_SASP_2025.xlsx`.
 
 ## Export Formats
 
-Two export modes available via routes:
-- `/exportar_por_ente?ente=<name>`: Single-entity Excel export
-- `/exportar_general`: All entities with summary sheet
-- Both support `?formato=json` for API access
+Excel exports via `/exportar_por_ente?ente=<name>` (single entity) or `/exportar_general` (all entities with summary). Both support `?formato=json`.
 
-Exported columns: RFC, Nombre, Puesto, Fecha Alta, Fecha Baja, Total Percepciones, Ente Origen, Entes Incompatibilidad, Quincenas, Estatus, Solventación
+Columns: RFC, Nombre, Puesto, Fecha Alta, Fecha Baja, Total Percepciones, Ente Origen, Entes Incompatibilidad, Quincenas, Estatus, Solventación
 
-## Testing Approach
+## Testing
 
-No automated test suite currently exists. Manual testing workflow:
-1. Start server: `python app.py`
-2. Navigate to http://localhost:4050
-3. Login with test credentials
-4. Upload sample Excel file (use `static/Plantilla.xlsx` as template)
-5. Verify results appear in `/resultados`
-6. Test solventación workflow on individual RFC
-7. Test export functionality
+No automated test suite. Manual testing: Start server (`python app.py`), login at http://localhost:4050, upload Excel file using `static/Plantilla.xlsx` template, verify results, test solventación workflow, and validate exports.
 
 ## Production Deployment
 
-The system is deployed at https://scil.omar-xyz.shop using:
-- Gunicorn as WSGI server (see requirements.txt)
-- Certbot for HTTPS (see requirements.txt)
-- Environment-specific database path via `SCIL_DB`
+Deployed at https://scil.omar-xyz.shop with Gunicorn WSGI server and Certbot HTTPS. Use `SCIL_DB` environment variable for production database path.
 
-## Code Style Notes
+## Code Conventions
 
-- Heavy use of helper functions with `_` prefix for internal utilities
-- Spanish naming in database/domain layer (e.g., `entes`, `quincenas`, `solventaciones`)
-- Text sanitization uses uppercase + accent removal for matching
-- LRU caching (`@lru_cache`) used for frequently accessed catalog data
+- **Helper functions**: Prefix with `_` for internal utilities (e.g., `_sanitize_text`, `_ente_match`)
+- **Domain naming**: Spanish terms in database/domain layer (`entes`, `quincenas`, `solventaciones`)
+- **Text normalization**: Always uppercase + accent removal for entity matching
+- **Caching**: `@lru_cache` decorators on catalog lookups (`_entes_cache()`)
+- **Entity identifiers**: Functions accept clave/sigla/nombre and normalize to canonical `clave` via `normalizar_ente_clave()`

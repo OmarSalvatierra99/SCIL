@@ -8,46 +8,26 @@
     <span class="subtitle">Consulta de posibles duplicidades detectadas</span>
   </header>
 
-  <!-- RESUMEN DE ENTES -->
+  <!-- RESUMEN DE ENTES CARGADOS -->
   {% if entes_info %}
   <section class="entes-resumen">
-    <h3>📊 Resumen de Entes Cargados</h3>
-    <p class="subtitle-info">Lista completa de entes con cantidad de trabajadores registrados:</p>
+    <h3>📊 Entes con Datos Cargados</h3>
+    <p class="subtitle-info">Entes que tienen información registrada en el sistema:</p>
     <div class="entes-grid">
       {% for ente_nombre, info in entes_info.items() %}
-        <div class="ente-card {% if info.total == 0 %}ente-vacio{% endif %}">
+        {% if info.total > 0 %}
+        <div class="ente-card {% if info.duplicados == 0 %}ente-limpio{% endif %}">
           <div class="ente-card-header">
             <strong>{{ info.siglas or ente_nombre }}</strong>
-            <span class="badge-count {% if info.total == 0 %}badge-cero{% else %}badge-ok{% endif %}">
-              {{ info.total }} trabajadores
+            <span class="badge-count {% if info.duplicados == 0 %}badge-limpio{% else %}badge-ok{% endif %}">
+              {{ info.total }} registros
             </span>
           </div>
           <div class="ente-card-body">
             {{ info.nombre_completo[:60] }}{% if info.nombre_completo|length > 60 %}...{% endif %}
           </div>
         </div>
-      {% endfor %}
-    </div>
-  </section>
-  {% endif %}
-
-  <!-- ENTES CON DATOS PERO SIN DUPLICIDADES -->
-  {% if entes_con_datos %}
-  <section class="entes-sin-duplicados">
-    <h3>✅ Entes Cargados sin Duplicidades Detectadas</h3>
-    <p class="subtitle-info">Los siguientes entes tienen trabajadores registrados sin incompatibilidades:</p>
-    <div class="entes-limpios-grid">
-      {% for ente_nombre, info in entes_con_datos.items() %}
-        <div class="ente-limpio-card">
-          <div class="ente-limpio-icon">✓</div>
-          <div class="ente-limpio-info">
-            <div class="ente-limpio-header">
-              <span class="ente-siglas">{{ info.siglas or ente_nombre }}</span>
-              <span class="trabajadores-badge">{{ info.total }}</span>
-            </div>
-            <div class="ente-limpio-nombre">{{ info.nombre_completo }}</div>
-          </div>
-        </div>
+        {% endif %}
       {% endfor %}
     </div>
   </section>
@@ -150,4 +130,3 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 </script>
 {% endblock %}
-

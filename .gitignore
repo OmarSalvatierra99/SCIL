@@ -1,26 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
 # Entorno virtual
 venv/
 ENV/
 env/
+.venv
 
-# Cachés de Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Archivos de base de datos locales
+# Base de datos
 *.db
+*.sqlite
 *.sqlite3
+scil.db
 
-# Archivos de subida (no suelen versionarse)
+# Archivos de subida
 uploads/
+*.xlsx
+!static/Plantilla.xlsx
+!catalogos/*.xlsx
 
-# Archivos de configuración de sistema/editor
+# Logs
 *.log
-*.env
-*.DS_Store
-*.swp
+logs/
+
+# Configuración local
+.env
+.env.local
+*.local
+
+# IDEs
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Distribución
+dist/
+build/
+*.egg-info/
+
+# Cobertura y testing
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Certificados SSL (si se generan localmente)
+*.pem
+*.key
+*.crt
 

@@ -128,7 +128,7 @@ def login():
             "autenticado": True
         })
         entes = user["entes"]
-        session["entes"] = ["TODOS"] if user["usuario"].lower() in {"odilia", "victor"} else entes
+        session["entes"] = ["TODOS"] if user["usuario"].lower() in {"odilia", "victor", "luis", "felipe"} else entes
         log.info("Login ok usuario=%s entes=%s", user["usuario"], ",".join(session["entes"]))
         return redirect(url_for("dashboard"))
     return render_template("login.html")
@@ -197,7 +197,11 @@ def reporte_por_ente():
     agrupado = {}
 
     for r in resultados:
+        # SOLO procesar registros con duplicidad real (más de un ente)
         entes_reg = list(set(r.get("entes", []) or ["Sin Ente"]))
+        if len(entes_reg) <= 1:
+            continue  # Saltar registros sin duplicidad
+
         for e in entes_reg:
             if not (_allowed_all(entes_usuario) or any(_ente_match(eu, [e]) for eu in entes_usuario)):
                 continue
@@ -222,15 +226,18 @@ def reporte_por_ente():
                     "estado_entes": {}
                 }
 
+            # Agregar todos los entes EXCEPTO el ente actual
             for en in r.get("entes", []):
-                agrupado[ente_nombre][rfc]["entes"].add(_ente_sigla(en))
+                if _sanitize_text(en) != _sanitize_text(e):
+                    agrupado[ente_nombre][rfc]["entes"].add(_ente_sigla(en))
 
             mapa_solvs = db_manager.get_solventaciones_por_rfc(r["rfc"])
             estado_default = r.get("estado", "Sin valoración")
             for en in r.get("entes", []):
-                clave = db_manager.normalizar_ente_clave(en)
-                est = mapa_solvs.get(clave, {}).get("estado") if mapa_solvs else None
-                agrupado[ente_nombre][rfc]["estado_entes"][_ente_sigla(en)] = est or estado_default
+                if _sanitize_text(en) != _sanitize_text(e):
+                    clave = db_manager.normalizar_ente_clave(en)
+                    est = mapa_solvs.get(clave, {}).get("estado") if mapa_solvs else None
+                    agrupado[ente_nombre][rfc]["estado_entes"][_ente_sigla(en)] = est or estado_default
 
     # Agregar TODOS los entes del catálogo (incluso con 0 trabajadores)
     todos_entes = db_manager.listar_entes()
