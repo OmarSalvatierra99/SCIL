@@ -134,20 +134,17 @@ class DatabaseManager:
 
         # Función de ordenamiento jerárquico para números tipo 1.2.3
         def orden_jerarquico(item):
-            num_str = item['num'].strip().rstrip('.')  # Eliminar puntos finales
-            # Dividir por puntos y convertir cada parte a entero
+            num_str = item['num'].strip().rstrip('.')
             partes = []
             for parte in num_str.split('.'):
                 try:
                     partes.append(int(parte))
                 except ValueError:
                     partes.append(0)
-            # Rellenar con ceros para comparación (máximo 5 niveles)
             while len(partes) < 5:
                 partes.append(0)
             return tuple(partes)
 
-        # Ordenar usando la función personalizada
         data.sort(key=orden_jerarquico)
         return data
 
@@ -166,13 +163,17 @@ class DatabaseManager:
         return data
 
     # -------------------------------------------------------
-    # Mapas rápidos de entes (para procesamiento de datos)
+    # Mapas rápidos de entes
     # -------------------------------------------------------
     def get_mapa_siglas(self):
         """Genera diccionario {SIGLA_NORMALIZADA: CLAVE_ENTE}."""
         conn = self._connect()
         cur = conn.cursor()
-        cur.execute("SELECT siglas, clave FROM entes WHERE activo=1")
+        cur.execute("""
+            SELECT siglas, clave FROM entes WHERE activo=1
+            UNION ALL
+            SELECT siglas, clave FROM municipios WHERE activo=1
+        """)
         mapa = {self._sanitize(sigla): clave for sigla, clave in cur.fetchall() if sigla}
         conn.close()
         return mapa
@@ -181,7 +182,11 @@ class DatabaseManager:
         """Genera diccionario {CLAVE_ENTE: SIGLA_O_NOMBRE}."""
         conn = self._connect()
         cur = conn.cursor()
-        cur.execute("SELECT clave, siglas, nombre FROM entes WHERE activo=1")
+        cur.execute("""
+            SELECT clave, siglas, nombre FROM entes WHERE activo=1
+            UNION ALL
+            SELECT clave, siglas, nombre FROM municipios WHERE activo=1
+        """)
         mapa = {}
         for clave, sigla, nombre in cur.fetchall():
             display = sigla if sigla else nombre
@@ -208,7 +213,7 @@ class DatabaseManager:
     # -------------------------------------------------------
     def normalizar_ente(self, valor):
         """
-        Busca un ente por sigla, clave o nombre y devuelve el NOMBRE completo.
+        Busca un ente o municipio por sigla, clave o nombre y devuelve el NOMBRE completo.
         Útil para mostrar el nombre oficial en reportes.
         """
         if not valor:
@@ -216,7 +221,11 @@ class DatabaseManager:
         conn = self._connect()
         cur = conn.cursor()
         cur.execute("""
-            SELECT nombre FROM entes
+            SELECT nombre FROM (
+                SELECT nombre, siglas, clave FROM entes WHERE activo=1
+                UNION ALL
+                SELECT nombre, siglas, clave FROM municipios WHERE activo=1
+            )
             WHERE UPPER(siglas)=UPPER(?) OR UPPER(clave)=UPPER(?) OR UPPER(nombre)=UPPER(?)
             LIMIT 1
         """, (valor, valor, valor))
@@ -226,7 +235,7 @@ class DatabaseManager:
 
     def normalizar_ente_clave(self, valor):
         """
-        Busca un ente por sigla, clave o nombre y devuelve la CLAVE única.
+        Busca un ente o municipio por sigla, clave o nombre y devuelve la CLAVE única.
         Útil para operaciones de base de datos y referencias internas.
         """
         if not valor:
@@ -235,7 +244,11 @@ class DatabaseManager:
         conn = self._connect()
         cur = conn.cursor()
         cur.execute("""
-            SELECT clave FROM entes
+            SELECT clave FROM (
+                SELECT clave, siglas, nombre FROM entes WHERE activo=1
+                UNION ALL
+                SELECT clave, siglas, nombre FROM municipios WHERE activo=1
+            )
             WHERE UPPER(siglas)=? OR UPPER(nombre)=? OR UPPER(clave)=?
             LIMIT 1
         """, (val, val, val))
@@ -333,8 +346,13 @@ class DatabaseManager:
         vistos, registros_unicos = set(), []
         for r in registros:
             for reg in r.get("registros", []):
-                clave = (reg.get("ente"), reg.get("puesto"),
-                         reg.get("monto"), reg.get("fecha_ingreso"), reg.get("fecha_egreso"))
+                clave = (
+                    reg.get("ente"),
+                    reg.get("puesto"),
+                    reg.get("monto"),
+                    reg.get("fecha_ingreso"),
+                    reg.get("fecha_egreso"),
+                )
                 if clave not in vistos:
                     vistos.add(clave)
                     registros_unicos.append(reg)
