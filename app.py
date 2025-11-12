@@ -69,8 +69,40 @@ def verificar_autenticacion():
 def _sanitize_text(s):
     return str(s or "").strip().upper()
 
+
 def _allowed_all(entes_usuario):
-    return any(_sanitize_text(e) == "TODOS" for e in entes_usuario)
+    """
+    Devuelve:
+    - 'ALL'         → ENTES + MUNICIPIOS
+    - 'ENTES'       → Solo entes
+    - 'MUNICIPIOS'  → Solo municipios
+    - None          → Sin acceso especial
+    Analiza textos como:
+    - 'TODOS'
+    - 'TODOS LOS ENTES'
+    - 'TODOS LOS MUNICIPIOS'
+    """
+    tiene_todos = False
+    tiene_entes = False
+    tiene_munis = False
+
+    for e in entes_usuario:
+        s = _sanitize_text(e)
+        if s == "TODOS":
+            tiene_todos = True
+        if "TODOS" in s and "ENTE" in s:
+            tiene_entes = True
+        if "TODOS" in s and "MUNICIP" in s:
+            tiene_munis = True
+
+    if tiene_todos or (tiene_entes and tiene_munis):
+        return "ALL"
+    if tiene_entes:
+        return "ENTES"
+    if tiene_munis:
+        return "MUNICIPIOS"
+    return None
+
 
 def _estatus_label(v):
     v = (v or "").strip().lower()
@@ -82,6 +114,7 @@ def _estatus_label(v):
         return "Solventado"
     return "Sin valoración"
 
+
 @lru_cache(maxsize=1)
 def _entes_cache():
     """
@@ -91,7 +124,7 @@ def _entes_cache():
     conn = db_manager._connect()
     cur = conn.cursor()
 
-    # 🔥 Unificación: entes + municipios en un solo catálogo interno
+    # Unificación: entes + municipios en un solo catálogo interno
     cur.execute("""
         SELECT clave, siglas, nombre, 'ENTE' AS tipo FROM entes
         UNION ALL
@@ -104,16 +137,18 @@ def _entes_cache():
         data[clave] = {
             "siglas": (r["siglas"] or "").strip().upper(),
             "nombre": (r["nombre"] or "").strip().upper(),
-            "tipo": r["tipo"]  # <-- Ya identifica si es ente o municipio
+            "tipo": r["tipo"]  # 'ENTE' o 'MUNICIPIO'
         }
 
     conn.close()
     return data
 
+
 def _ente_match(ente_usuario, clave_lista):
     """
     Permisos correctos:
-    usuario puede tener sigla (ACUAMANALA) y el registro tener clave (MUN_1)
+    - El usuario puede tener sigla (ACUAMANALA) y el registro tener clave (MUN_1)
+    - O nombre, o clave directamente.
     """
     euser = _sanitize_text(ente_usuario)
 
@@ -121,7 +156,7 @@ def _ente_match(ente_usuario, clave_lista):
         c_norm = _sanitize_text(c)
 
         for k, d in _entes_cache().items():
-            # usuario podría tener sigla y registro tener clave
+            # El usuario podría tener sigla, nombre o clave
             if euser in {d["siglas"], d["nombre"], k}:
                 if c_norm in {d["siglas"], d["nombre"], k}:
                     return True
@@ -137,6 +172,7 @@ def _ente_sigla(clave):
         if s in {k, d["siglas"], d["nombre"]}:
             return d["siglas"] or d["nombre"] or s
     return s
+
 
 def _ente_display(v):
     if not v:
@@ -165,11 +201,27 @@ def login():
             "nombre": user["nombre"],
             "autenticado": True
         })
-        entes = user["entes"]
-        session["entes"] = ["TODOS"] if user["usuario"].lower() in {"odilia", "luis", "felipe"} else entes
+
+        # Normalizar entes del usuario a CLAVE oficial cuando aplique
+        entes_norm = []
+        for e in user["entes"]:
+            clave_norm = db_manager.normalizar_ente_clave(e)
+            if clave_norm:
+                entes_norm.append(clave_norm)
+            else:
+                entes_norm.append(e)
+
+        # Asignar permisos especiales
+        if user["usuario"].lower() in {"odilia", "luis", "felipe"}:
+            # Superusuarios: acceso total
+            session["entes"] = ["TODOS"]
+        else:
+            session["entes"] = entes_norm
+
         log.info("Login ok usuario=%s entes=%s", user["usuario"], ",".join(session["entes"]))
         return redirect(url_for("dashboard"))
     return render_template("login.html")
+
 
 @app.route("/logout")
 def logout():
@@ -234,9 +286,11 @@ def reporte_por_ente():
     entes_usuario = session.get("entes", [])
     agrupado = {}
 
+    modo_permiso = _allowed_all(entes_usuario)
+
     for r in resultados:
         # SOLO procesar registros con duplicidad real (más de un ente)
-        # Detectar si realmente existe una incompatibilidad (misma QNAn más de un ente)
+        # Detectar si realmente existe una incompatibilidad (misma QNA en más de un ente)
         registros_rfc = r.get("registros", [])
         qnas_por_ente = {}
 
@@ -262,7 +316,21 @@ def reporte_por_ente():
             continue
 
         for e in entes_cruce_real:
-            if not (_allowed_all(entes_usuario) or any(_ente_match(eu, [e]) for eu in entes_usuario)):
+            # Determinar tipo de ente (ENTE / MUNICIPIO)
+            info_ente = _entes_cache().get(_sanitize_text(e), {})
+            tipo_ente = info_ente.get("tipo", "")
+
+            # Evaluar permisos
+            if modo_permiso == "ALL":
+                permitido = True
+            elif modo_permiso == "ENTES":
+                permitido = (tipo_ente == "ENTE")
+            elif modo_permiso == "MUNICIPIO":
+                permitido = (tipo_ente == "MUNICIPIO")
+            else:
+                permitido = any(_ente_match(eu, [e]) for eu in entes_usuario)
+
+            if not permitido:
                 continue
 
             ente_nombre = _ente_display(e)
@@ -271,7 +339,9 @@ def reporte_por_ente():
             rfc = r.get("rfc")
             puesto = (
                 r.get("puesto")
-                or ", ".join({reg.get("puesto", "").strip() for reg in (r.get("registros") or []) if reg.get("puesto")})
+                or ", ".join({reg.get("puesto", "").strip()
+                              for reg in (r.get("registros") or [])
+                              if reg.get("puesto")})
                 or "Sin puesto"
             )
 
@@ -300,7 +370,9 @@ def reporte_por_ente():
 
     # Agregar TODOS los entes del catálogo (incluso con 0 trabajadores)
     todos_entes = db_manager.listar_entes()
-    entes_info = {}  # {nombre_ente: {siglas, total_trabajadores}}
+    todos_municipios = db_manager.listar_municipios()
+    todos_entidades = todos_entes + todos_municipios
+    entes_info = {}       # {nombre_ente: {siglas, total_trabajadores}}
     entes_con_datos = {}  # Entes con trabajadores cargados (incluso sin duplicidades)
 
     # Contar trabajadores por ente (incluyendo los que no tienen duplicidades)
@@ -312,10 +384,25 @@ def reporte_por_ente():
                 ente_display = _ente_display(ente_clave)
                 trabajadores_por_ente[ente_display] = trabajadores_por_ente.get(ente_display, 0) + 1
 
-    for ente in todos_entes:
+    for ente in todos_entidades:
         ente_nombre = ente['siglas'] or ente['nombre']
-        # Verificar si el usuario tiene acceso a este ente
-        if not (_allowed_all(entes_usuario) or any(_ente_match(eu, [ente['clave']]) for eu in entes_usuario)):
+
+        # Determinar tipo de ente desde el catálogo unificado
+        info_ente = _entes_cache().get(_sanitize_text(ente['clave']), {})
+        tipo_ente = info_ente.get("tipo", "ENTE")  # por defecto ENTES
+
+        # Verificar permisos según modo
+        if modo_permiso == "ALL":
+            permitido = True
+        elif modo_permiso == "ENTES":
+            permitido = (tipo_ente == "ENTE")
+        elif modo_permiso == "MUNICIPIOS":
+            # En este bloque solo recorremos ENTES (no municipios), así que se omiten
+            permitido = (tipo_ente == "MUNICIPIO")
+        else:
+            permitido = any(_ente_match(eu, [ente['clave']]) for eu in entes_usuario)
+
+        if not permitido:
             continue
 
         # Si el ente no tiene trabajadores en agrupado, agregarlo con lista vacía
@@ -341,10 +428,12 @@ def reporte_por_ente():
             }
 
     agrupado_final = {k: list(v.values()) for k, v in agrupado.items()}
-    return render_template("resultados.html",
-                          resultados=dict(sorted(agrupado_final.items())),
-                          entes_info=dict(sorted(entes_info.items())),
-                          entes_con_datos=dict(sorted(entes_con_datos.items())))
+    return render_template(
+        "resultados.html",
+        resultados=dict(sorted(agrupado_final.items())),
+        entes_info=dict(sorted(entes_info.items())),
+        entes_con_datos=dict(sorted(entes_con_datos.items()))
+    )
 
 # -----------------------------------------------------------
 # DETALLE POR RFC
@@ -371,6 +460,7 @@ def resultados_por_rfc(rfc):
             info["estado"] = "Mixto"
 
     return render_template("detalle_rfc.html", rfc=rfc, info=info)
+
 
 @app.route("/solventacion/<rfc>", methods=["GET", "POST"])
 def solventacion_detalle(rfc):
@@ -412,7 +502,6 @@ def solventacion_detalle(rfc):
         solventacion_prev=solventacion_prev
     )
 
-
 # -----------------------------------------------------------
 # ACTUALIZAR ESTADO (AJAX)
 # -----------------------------------------------------------
@@ -434,7 +523,6 @@ def actualizar_estado():
         log.exception("Error en actualizar_estado")
         return jsonify({"error": str(e)}), 500
 
-# -----------------------------------------------------------
 # -----------------------------------------------------------
 # UTIL: construir filas exportables
 # -----------------------------------------------------------
@@ -497,6 +585,7 @@ def _construir_filas_export(resultados):
         if len(item["_qnas_set"]) >= 24:
             quincenas = "Activo en Todo el Ejercicio"
         elif item["_qnas_set"]:
+
             quincenas = ", ".join(f"QNA{q}" for q in sorted(item["_qnas_set"]))
         else:
             quincenas = "N/A"
@@ -528,7 +617,6 @@ def _construir_filas_export(resultados):
         })
     return filas
 
-
 # -----------------------------------------------------------
 # EXPORTAR POR ENTE (JSON + Excel)
 # -----------------------------------------------------------
@@ -549,10 +637,10 @@ def exportar_por_ente():
         return jsonify({"ente": ente_sel, "total_registros": len(filas), "datos": filas})
 
     df = pd.DataFrame(filas)[[
-        "RFC","Nombre","Puesto","Fecha Alta","Fecha Baja","Total Percepciones",
-        "Ente Origen","Entes Incompatibilidad","Quincenas","Estatus","Solventación"
+        "RFC", "Nombre", "Puesto", "Fecha Alta", "Fecha Baja", "Total Percepciones",
+        "Ente Origen", "Entes Incompatibilidad", "Quincenas", "Estatus", "Solventación"
     ]]
-    df.sort_values(by=["Ente Origen","RFC"], inplace=True)
+    df.sort_values(by=["Ente Origen", "RFC"], inplace=True)
 
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -578,16 +666,16 @@ def exportar_excel_general():
         return jsonify({"total_registros": len(filas), "datos": filas})
 
     df = pd.DataFrame(filas)[[
-        "RFC","Nombre","Puesto","Fecha Alta","Fecha Baja","Total Percepciones",
-        "Ente Origen","Entes Incompatibilidad","Quincenas","Estatus","Solventación"
+        "RFC", "Nombre", "Puesto", "Fecha Alta", "Fecha Baja", "Total Percepciones",
+        "Ente Origen", "Entes Incompatibilidad", "Quincenas", "Estatus", "Solventación"
     ]]
-    df.sort_values(by=["RFC","Ente Origen"], inplace=True)
+    df.sort_values(by=["RFC", "Ente Origen"], inplace=True)
 
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Duplicidades_Generales")
         resumen = (
-            df.groupby("Ente Origen").agg(Total_RFCs=("RFC","nunique"))
+            df.groupby("Ente Origen").agg(Total_RFCs=("RFC", "nunique"))
               .reset_index().sort_values("Ente Origen")
         )
         resumen.to_excel(writer, index=False, sheet_name="Resumen_por_Ente")
@@ -609,7 +697,12 @@ def catalogos_home():
 # -----------------------------------------------------------
 @app.context_processor
 def inject_helpers():
-    return {"_sanitize_text": _sanitize_text, "db_manager": db_manager}
+    return {
+        "_sanitize_text": _sanitize_text,
+        "_ente_display": _ente_display,
+        "_ente_sigla": _ente_sigla,
+        "db_manager": db_manager
+    }
 
 @app.route('/descargar-plantilla')
 def descargar_plantilla():
@@ -623,3 +716,4 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 4050))
     log.info("Levantando Flask en 0.0.0.0:%s (debug=%s)", port, True)
     app.run(host="0.0.0.0", port=port, debug=True)
+
