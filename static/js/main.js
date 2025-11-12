@@ -56,11 +56,23 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!res.ok || data.error)
           throw new Error(data.error || `Error del servidor (${res.status})`);
 
+        // Mostrar alertas si existen
+        let alertasHTML = '';
+        if (data.alertas && data.alertas.length > 0) {
+          alertasHTML = '<div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 1rem; margin-top: 1rem; border-radius: 6px;">';
+          alertasHTML += '<strong style="color: #92400e;">⚠️ Advertencias:</strong><ul style="margin: 0.5rem 0 0 1.2rem; color: #92400e;">';
+          data.alertas.forEach(alerta => {
+            alertasHTML += `<li>${alerta.mensaje}</li>`;
+          });
+          alertasHTML += '</ul></div>';
+        }
+
         uploadResult.hidden = false;
         resultMessage.innerHTML = `
           <strong>${data.mensaje || "Procesamiento completado"}</strong><br>
           <span>${data.total_resultados || 0} registros detectados.</span><br>
           <span>${data.nuevos || 0} nuevos registros guardados.</span>
+          ${alertasHTML}
         `;
       } catch (err) {
         uploadStatus.hidden = true;

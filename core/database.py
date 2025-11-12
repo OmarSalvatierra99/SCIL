@@ -59,6 +59,7 @@ class DatabaseManager:
 
             CREATE TABLE IF NOT EXISTS entes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                num TEXT NOT NULL,
                 clave TEXT UNIQUE NOT NULL,
                 nombre TEXT NOT NULL,
                 siglas TEXT,
@@ -70,6 +71,7 @@ class DatabaseManager:
 
             CREATE TABLE IF NOT EXISTS municipios (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                num TEXT NOT NULL,
                 clave TEXT UNIQUE NOT NULL,
                 nombre TEXT NOT NULL,
                 siglas TEXT,
@@ -105,12 +107,12 @@ class DatabaseManager:
         cur.execute("SELECT COUNT(*) FROM entes")
         if cur.fetchone()[0] == 0:
             entes = [
-                ("ENTE_00001", "Secretaría de Gobierno", "SEGOB", "Estatal", "Estatal"),
-                ("ENTE_00002", "Secretaría de Finanzas", "SEFIN", "Estatal", "Estatal"),
-                ("ENTE_00003", "Secretaría de Educación Pública", "SEPE", "Estatal", "Estatal"),
+                ("1.2", "ENTE_1_2", "Secretaría de Gobierno", "SEGOB", "Dependencia", "Estatal"),
+                ("1.4", "ENTE_1_4", "Secretaría de Finanzas", "SEFIN", "Dependencia", "Estatal"),
+                ("1.8", "ENTE_1_8", "Secretaría de Educación Pública", "SEPE", "Dependencia", "Estatal"),
             ]
             cur.executemany(
-                "INSERT INTO entes (clave, nombre, siglas, clasificacion, ambito) VALUES (?,?,?,?,?)", entes)
+                "INSERT INTO entes (num, clave, nombre, siglas, clasificacion, ambito) VALUES (?,?,?,?,?,?)", entes)
             print("🏛️ Entes base insertados")
 
         conn.commit()
@@ -120,54 +122,70 @@ class DatabaseManager:
     # Catálogos
     # -------------------------------------------------------
     def listar_entes(self, solo_activos=True):
+        """Lista entes ordenados por NUM (respeta el orden institucional jerárquico)."""
         conn = self._connect()
         cur = conn.cursor()
-        q = "SELECT clave, nombre, siglas, clasificacion, ambito FROM entes"
+        q = "SELECT num, clave, nombre, siglas, clasificacion, ambito FROM entes"
         if solo_activos:
             q += " WHERE activo=1"
-        q += " ORDER BY nombre"
         cur.execute(q)
         data = [dict(r) for r in cur.fetchall()]
         conn.close()
+
+        # Función de ordenamiento jerárquico para números tipo 1.2.3
+        def orden_jerarquico(item):
+            num_str = item['num'].strip().rstrip('.')  # Eliminar puntos finales
+            # Dividir por puntos y convertir cada parte a entero
+            partes = []
+            for parte in num_str.split('.'):
+                try:
+                    partes.append(int(parte))
+                except ValueError:
+                    partes.append(0)
+            # Rellenar con ceros para comparación (máximo 5 niveles)
+            while len(partes) < 5:
+                partes.append(0)
+            return tuple(partes)
+
+        # Ordenar usando la función personalizada
+        data.sort(key=orden_jerarquico)
         return data
 
     def listar_municipios(self):
+        """Lista municipios ordenados por NUM (respeta el orden institucional)."""
         conn = self._connect()
         cur = conn.cursor()
         cur.execute("""
-            SELECT clave, nombre, siglas, clasificacion, ambito
+            SELECT num, clave, nombre, siglas, clasificacion, ambito
             FROM municipios
             WHERE activo=1
-            ORDER BY nombre
+            ORDER BY CAST(num AS INTEGER), num
         """)
         data = [dict(r) for r in cur.fetchall()]
         conn.close()
         return data
 
     # -------------------------------------------------------
-    # Mapas rápidos de entes
+    # Mapas rápidos de entes (para procesamiento de datos)
     # -------------------------------------------------------
     def get_mapa_siglas(self):
+        """Genera diccionario {SIGLA_NORMALIZADA: CLAVE_ENTE}."""
         conn = self._connect()
         cur = conn.cursor()
         cur.execute("SELECT siglas, clave FROM entes WHERE activo=1")
-        mapa = {}
-        for sigla, clave in cur.fetchall():
-            if sigla:
-                mapa[self._sanitize(sigla)] = clave
+        mapa = {self._sanitize(sigla): clave for sigla, clave in cur.fetchall() if sigla}
         conn.close()
         return mapa
 
     def get_mapa_claves_inverso(self):
+        """Genera diccionario {CLAVE_ENTE: SIGLA_O_NOMBRE}."""
         conn = self._connect()
         cur = conn.cursor()
         cur.execute("SELECT clave, siglas, nombre FROM entes WHERE activo=1")
         mapa = {}
         for clave, sigla, nombre in cur.fetchall():
-            if sigla:
-                mapa[self._sanitize(clave)] = self._sanitize(sigla)
-            elif nombre:
-                mapa[self._sanitize(clave)] = self._sanitize(nombre)
+            display = sigla if sigla else nombre
+            mapa[self._sanitize(clave)] = self._sanitize(display)
         conn.close()
         return mapa
 
@@ -186,9 +204,13 @@ class DatabaseManager:
         return s
 
     # -------------------------------------------------------
-    # Normalización
+    # Normalización de entes
     # -------------------------------------------------------
     def normalizar_ente(self, valor):
+        """
+        Busca un ente por sigla, clave o nombre y devuelve el NOMBRE completo.
+        Útil para mostrar el nombre oficial en reportes.
+        """
         if not valor:
             return None
         conn = self._connect()
@@ -203,6 +225,10 @@ class DatabaseManager:
         return row[0] if row else None
 
     def normalizar_ente_clave(self, valor):
+        """
+        Busca un ente por sigla, clave o nombre y devuelve la CLAVE única.
+        Útil para operaciones de base de datos y referencias internas.
+        """
         if not valor:
             return None
         val = self._sanitize(valor)
@@ -240,27 +266,24 @@ class DatabaseManager:
 
     def guardar_resultados(self, resultados):
         if not resultados:
-            return 0
+            return 0, 0
         conn = self._connect()
         cur = conn.cursor()
-        count = 0
+        nuevos, duplicados = 0, 0
         for r in resultados:
+            texto = json.dumps(r, ensure_ascii=False, sort_keys=True)
+            h = self._hash_text(texto)
             try:
                 cur.execute("""
                     INSERT INTO laboral (tipo_analisis, rfc, datos, hash_firma)
                     VALUES (?, ?, ?, ?)
-                """, (
-                    r.get("tipo_patron", "GENERAL"),
-                    r.get("rfc", ""),
-                    json.dumps(r, ensure_ascii=False),
-                    r["hash_firma"]
-                ))
-                count += 1
+                """, (r.get("tipo_patron", "GENERAL"), r.get("rfc", ""), texto, h))
+                nuevos += 1
             except sqlite3.IntegrityError:
-                continue
+                duplicados += 1
         conn.commit()
         conn.close()
-        return count
+        return nuevos, duplicados
 
     def obtener_resultados_paginados(self, tabla="laboral", filtro=None, pagina=1, limite=10000):
         conn = self._connect()
@@ -348,8 +371,6 @@ class DatabaseManager:
         if not estado:
             estado = "Sin valoración"
 
-
-   
         conn = self._connect()
         cur = conn.cursor()
         cur.execute("""

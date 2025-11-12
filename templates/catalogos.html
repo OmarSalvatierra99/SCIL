@@ -3,10 +3,10 @@
 
 {% block content %}
 <div class="catalogo-container">
-  <div class="page-header">
+  <header class="header-flex">
     <h2>Catálogos Institucionales</h2>
-    <p class="subtitle">Consulta de Entes Estatales y Municipales Registrados</p>
-  </div>
+    <span class="subtitle">Consulta de Entes Estatales y Municipales Registrados</span>
+  </header>
 
   <!-- Tabs -->
   <div class="tabs">
@@ -20,6 +20,7 @@
       <table class="tabla-resultados">
         <thead>
           <tr>
+            <th>NUM</th>
             <th>Nombre</th>
             <th>Siglas</th>
             <th>Clasificación</th>
@@ -28,6 +29,7 @@
         <tbody>
           {% for e in entes %}
           <tr>
+            <td>{{ e.num or '-' }}</td>
             <td>{{ e.nombre }}</td>
             <td>{{ e.siglas or '-' }}</td>
             <td>{{ e.clasificacion or '-' }}</td>
@@ -46,6 +48,7 @@
       <table class="tabla-resultados">
         <thead>
           <tr>
+            <th>NUM</th>
             <th>Nombre</th>
             <th>Siglas</th>
             <th>Clasificación</th>
@@ -54,6 +57,7 @@
         <tbody>
           {% for m in municipios %}
           <tr>
+            <td>{{ m.num or '-' }}</td>
             <td>{{ m.nombre }}</td>
             <td>{{ m.siglas or '-' }}</td>
             <td>{{ m.clasificacion or '-' }}</td>

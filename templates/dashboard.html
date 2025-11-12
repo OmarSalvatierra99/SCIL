@@ -2,7 +2,7 @@
 {% block title %}SASP - Panel de Control{% endblock %}
 
 {% block content %}
-<div class="container dashboard">
+<div class="dashboard">
 
   <!-- Encabezado -->
   <header class="page-header">
@@ -13,11 +13,11 @@
     </p>
   </header>
 
- <div class="template-download">
-  <a href="{{ url_for('descargar_plantilla') }}" class="btn btn-success">
-    📥 Descargar plantilla
-  </a>
-</div>
+  <div class="template-download">
+    <a href="{{ url_for('descargar_plantilla') }}" class="btn btn-success">
+      📥 Descargar plantilla Excel
+    </a>
+  </div>
 
 
   <!-- Área de carga -->

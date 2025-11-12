@@ -162,16 +162,27 @@ def upload_laboral():
     try:
         nombres = [getattr(f, "filename", "archivo.xlsx") for f in files]
         log.info("Upload recibido: %s", nombres)
-        resultados = data_processor.procesar_archivos(files)
-        log.info("Cruces detectados=%d", len(resultados))
+
+        # Procesar archivos y obtener alertas
+        resultados, alertas = data_processor.procesar_archivos(files)
+        log.info("Registros detectados=%d | Alertas=%d", len(resultados), len(alertas))
+
         nuevos_res, repetidos, n_rep = db_manager.comparar_con_historico(resultados)
-        nuevos = db_manager.guardar_resultados(nuevos_res)
-        log.info("Guardados nuevos=%d | Repetidos=%d", nuevos, n_rep)
-        return jsonify({
-            "mensaje": "Procesamiento completado",
+        n_guardados, n_dup = db_manager.guardar_resultados(nuevos_res)
+        total_dup = n_rep + n_dup
+
+        log.info("Guardados=%d | Duplicados=%d", n_guardados, total_dup)
+
+        response = {
+            "mensaje": f"Procesamiento completado. Guardados {n_guardados} trabajadores, detectados {total_dup} duplicados.",
             "total_resultados": len(resultados),
-            "nuevos": nuevos
-        })
+            "nuevos": n_guardados,
+            "duplicados": total_dup,
+            "alertas": alertas  # Incluir alertas en la respuesta
+        }
+
+        return jsonify(response)
+
     except Exception as e:
         log.exception("Error en upload_laboral")
         return jsonify({"error": f"Error al procesar archivos: {e}"}), 500
@@ -221,10 +232,53 @@ def reporte_por_ente():
                 est = mapa_solvs.get(clave, {}).get("estado") if mapa_solvs else None
                 agrupado[ente_nombre][rfc]["estado_entes"][_ente_sigla(en)] = est or estado_default
 
+    # Agregar TODOS los entes del catálogo (incluso con 0 trabajadores)
+    todos_entes = db_manager.listar_entes()
+    entes_info = {}  # {nombre_ente: {siglas, total_trabajadores}}
+    entes_con_datos = {}  # Entes con trabajadores cargados (incluso sin duplicidades)
+
+    # Contar trabajadores por ente (incluyendo los que no tienen duplicidades)
+    trabajadores_por_ente = {}
+    for r in resultados:
+        for reg in r.get("registros", []):
+            ente_clave = reg.get("ente")
+            if ente_clave:
+                ente_display = _ente_display(ente_clave)
+                trabajadores_por_ente[ente_display] = trabajadores_por_ente.get(ente_display, 0) + 1
+
+    for ente in todos_entes:
+        ente_nombre = ente['siglas'] or ente['nombre']
+        # Verificar si el usuario tiene acceso a este ente
+        if not (_allowed_all(entes_usuario) or any(_ente_match(eu, [ente['clave']]) for eu in entes_usuario)):
+            continue
+
+        # Si el ente no tiene trabajadores en agrupado, agregarlo con lista vacía
+        if ente_nombre not in agrupado:
+            agrupado[ente_nombre] = {}
+
+        total_trabajadores = trabajadores_por_ente.get(ente_nombre, 0)
+        total_duplicados = len(agrupado.get(ente_nombre, {}))
+
+        entes_info[ente_nombre] = {
+            'siglas': ente['siglas'],
+            'nombre_completo': ente['nombre'],
+            'total': total_trabajadores,
+            'duplicados': total_duplicados
+        }
+
+        # Si tiene trabajadores pero no duplicidades, agregarlo a entes_con_datos
+        if total_trabajadores > 0 and total_duplicados == 0:
+            entes_con_datos[ente_nombre] = {
+                'siglas': ente['siglas'],
+                'nombre_completo': ente['nombre'],
+                'total': total_trabajadores
+            }
+
     agrupado_final = {k: list(v.values()) for k, v in agrupado.items()}
-    if not agrupado_final:
-        return render_template("empty.html", mensaje="Sin registros del ente asignado.")
-    return render_template("resultados.html", resultados=dict(sorted(agrupado_final.items())))
+    return render_template("resultados.html",
+                          resultados=dict(sorted(agrupado_final.items())),
+                          entes_info=dict(sorted(entes_info.items())),
+                          entes_con_datos=dict(sorted(entes_con_datos.items())))
 
 # -----------------------------------------------------------
 # DETALLE POR RFC
