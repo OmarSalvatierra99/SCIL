@@ -84,27 +84,50 @@ def _estatus_label(v):
 
 @lru_cache(maxsize=1)
 def _entes_cache():
+    """
+    Devuelve diccionario unificado de ENTES + MUNICIPIOS:
+    { clave_normalizada: {siglas, nombre, tipo} }
+    """
     conn = db_manager._connect()
     cur = conn.cursor()
-    cur.execute("SELECT clave, siglas, nombre FROM entes")
+
+    # 🔥 Unificación: entes + municipios en un solo catálogo interno
+    cur.execute("""
+        SELECT clave, siglas, nombre, 'ENTE' AS tipo FROM entes
+        UNION ALL
+        SELECT clave, siglas, nombre, 'MUNICIPIO' AS tipo FROM municipios
+    """)
+
     data = {}
     for r in cur.fetchall():
         clave = (r["clave"] or "").strip().upper()
         data[clave] = {
             "siglas": (r["siglas"] or "").strip().upper(),
-            "nombre": (r["nombre"] or "").strip().upper()
+            "nombre": (r["nombre"] or "").strip().upper(),
+            "tipo": r["tipo"]  # <-- Ya identifica si es ente o municipio
         }
+
     conn.close()
     return data
 
 def _ente_match(ente_usuario, clave_lista):
+    """
+    Permisos correctos:
+    usuario puede tener sigla (ACUAMANALA) y el registro tener clave (MUN_1)
+    """
     euser = _sanitize_text(ente_usuario)
-    for k, d in _entes_cache().items():
-        if euser in {k, d["siglas"], d["nombre"]}:
-            for c in clave_lista:
-                if _sanitize_text(c) in {k, d["siglas"], d["nombre"]}:
+
+    for c in clave_lista:
+        c_norm = _sanitize_text(c)
+
+        for k, d in _entes_cache().items():
+            # usuario podría tener sigla y registro tener clave
+            if euser in {d["siglas"], d["nombre"], k}:
+                if c_norm in {d["siglas"], d["nombre"], k}:
                     return True
+
     return False
+
 
 def _ente_sigla(clave):
     if not clave:
@@ -471,7 +494,7 @@ def _construir_filas_export(resultados):
     # === Construir filas ===
     filas = []
     for key, item in agregados.items():
-        if len(item["_qnas_set"]) >= 12:
+        if len(item["_qnas_set"]) >= 24:
             quincenas = "Activo en Todo el Ejercicio"
         elif item["_qnas_set"]:
             quincenas = ", ".join(f"QNA{q}" for q in sorted(item["_qnas_set"]))
