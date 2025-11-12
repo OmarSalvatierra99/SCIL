@@ -29,14 +29,12 @@ class DataProcessor:
     # Limpieza y normalización
     # -------------------------------------------------------
     def limpiar_rfc(self, rfc):
-        """Valida y limpia RFC mexicano (10-13 caracteres alfanuméricos)."""
         if pd.isna(rfc):
             return None
         s = re.sub(r"[^A-Z0-9]", "", str(rfc).strip().upper())
         return s if 10 <= len(s) <= 13 else None
 
     def limpiar_fecha(self, fecha):
-        """Convierte fechas de Excel a formato ISO (YYYY-MM-DD)."""
         if pd.isna(fecha):
             return None
         if isinstance(fecha, (datetime, date)):
@@ -48,38 +46,20 @@ class DataProcessor:
         return f.strftime("%Y-%m-%d") if not pd.isna(f) else None
 
     def normalizar_ente_clave(self, etiqueta):
-        """
-        Convierte etiqueta de ente (sigla, nombre o clave) a CLAVE única.
-        Usa cache de mapas para optimizar búsquedas repetidas.
-        """
         if not etiqueta:
             return None
         val = str(etiqueta).strip().upper()
-        # Intenta primero con cache rápido
         if val in self.mapa_siglas:
             return self.mapa_siglas[val]
-        # Fallback a búsqueda en base de datos
         return self.db.normalizar_ente_clave(val)
 
     # -------------------------------------------------------
     # Procesamiento principal
     # -------------------------------------------------------
     def procesar_archivos(self, archivos):
-        """
-        Procesa uno o más archivos Excel con datos laborales.
-
-        Formato esperado:
-        - Cada hoja representa un ente público
-        - Columnas requeridas: RFC, NOMBRE, PUESTO, FECHA_ALTA, FECHA_BAJA
-        - Columnas opcionales: QNA1-QNA24 (indicadores de actividad quincenal)
-
-        Retorna tupla: (resultados, alertas)
-        - resultados: lista de registros con empleados y sus cruces detectados
-        - alertas: lista de advertencias sobre entes no encontrados o errores
-        """
         print(f"📊 Procesando {len(archivos)} archivo(s) laborales...")
-        entes_rfc = defaultdict(list)  # {RFC: [registros por ente]}
-        alertas = []  # Lista de alertas para el usuario
+        entes_rfc = defaultdict(list)
+        alertas = []
 
         for f in archivos:
             nombre_archivo = getattr(f, "filename", getattr(f, "name", "archivo.xlsx"))
@@ -103,8 +83,9 @@ class DataProcessor:
 
                 df = xl.parse(hoja).rename(columns=lambda x: str(x).strip().upper().replace(" ", "_"))
                 columnas_base = {"RFC", "NOMBRE", "PUESTO", "FECHA_ALTA", "FECHA_BAJA"}
+
                 if not columnas_base.issubset(df.columns):
-                    alerta = f"⚠️ Hoja '{hoja}' omitida: faltan columnas requeridas (RFC, NOMBRE, PUESTO, FECHA_ALTA, FECHA_BAJA)."
+                    alerta = f"⚠️ Hoja '{hoja}' omitida: faltan columnas requeridas."
                     print(alerta)
                     alertas.append({
                         "tipo": "columnas_faltantes",
@@ -114,7 +95,6 @@ class DataProcessor:
                     })
                     continue
 
-                # Acepta QNA1–QNA24
                 qnas = [c for c in df.columns if re.match(r"^QNA([1-9]|1[0-9]|2[0-4])$", c)]
                 registros_validos = 0
 
@@ -123,7 +103,6 @@ class DataProcessor:
                     if not rfc:
                         continue
 
-                    # Solo guardar quincenas activas (no vacías, no 0, no NA)
                     qnas_activas = {q: row.get(q) for q in qnas if self._es_activo(row.get(q))}
 
                     entes_rfc[rfc].append({
@@ -139,7 +118,6 @@ class DataProcessor:
 
                 print(f"✅ Hoja '{hoja}': {registros_validos} registros procesados.")
 
-        # Siempre genera registros de empleados (aunque no haya cruces)
         resultados = self._cruces_quincenales(entes_rfc)
         sin_cruce = self._empleados_sin_cruce(entes_rfc, resultados)
         resultados.extend(sin_cruce)
@@ -151,7 +129,6 @@ class DataProcessor:
     # Empleados sin cruce
     # -------------------------------------------------------
     def _empleados_sin_cruce(self, entes_rfc, hallazgos):
-        """Agrega RFC sin duplicidad para trazabilidad."""
         hallados = {h["rfc"] for h in hallazgos}
         faltantes = []
         for rfc, registros in entes_rfc.items():
@@ -170,7 +147,7 @@ class DataProcessor:
         return faltantes
 
     # -------------------------------------------------------
-    # Cruces entre entes por quincenas
+    # Cruces: VERSIÓN CORREGIDA
     # -------------------------------------------------------
     def _es_activo(self, valor):
         if pd.isna(valor):
@@ -186,27 +163,30 @@ class DataProcessor:
             if len(registros) < 2:
                 continue
 
-            qnas_presentes = sorted({
-                q for r in registros for q, v in r["qnas"].items() if self._es_activo(v)
-            })
-            if not qnas_presentes:
-                continue
+            qna_map = defaultdict(list)
 
-            for qna in qnas_presentes:
-                activos = [r for r in registros if self._es_activo(r["qnas"].get(qna))]
-                entes_activos = sorted({r["ente"] for r in activos})
+            for reg in registros:
+                for qna, valor in reg["qnas"].items():
+                    if self._es_activo(valor):
+                        qna_map[qna].append(reg)
+
+            for qna, regs_activos in qna_map.items():
+                entes_activos = sorted({r["ente"] for r in regs_activos})
+
                 if len(entes_activos) > 1:
                     num = int(re.sub(r"\D", "", qna))
                     hallazgos.append({
                         "rfc": rfc,
-                        "nombre": activos[0].get("nombre", ""),
+                        "nombre": regs_activos[0].get("nombre", ""),
                         "entes": entes_activos,
                         "fecha_comun": f"{año_actual}Q{num:02d}",
                         "tipo_patron": "CRUCE_ENTRE_ENTES_QNA",
                         "descripcion": f"Activo en más de un ente en la quincena {qna}.",
-                        "registros": activos,
+                        "registros": regs_activos,
                         "estado": "Sin valoración",
                         "solventacion": ""
                     })
+
         return hallazgos
+
 

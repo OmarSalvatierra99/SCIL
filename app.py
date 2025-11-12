@@ -213,11 +213,32 @@ def reporte_por_ente():
 
     for r in resultados:
         # SOLO procesar registros con duplicidad real (más de un ente)
-        entes_reg = list(set(r.get("entes", []) or ["Sin Ente"]))
-        if len(entes_reg) <= 1:
-            continue  # Saltar registros sin duplicidad
+        # Detectar si realmente existe una incompatibilidad (misma QNAn más de un ente)
+        registros_rfc = r.get("registros", [])
+        qnas_por_ente = {}
 
-        for e in entes_reg:
+        for reg in registros_rfc:
+            ente = reg.get("ente")
+            qnas = set(reg.get("qnas", {}).keys())
+            qnas_por_ente[ente] = qnas
+
+        # Buscar intersección real
+        duplicidad_real = False
+        entes_cruce_real = set()
+
+        entes_lista = list(qnas_por_ente.keys())
+        for i in range(len(entes_lista)):
+            for j in range(i + 1, len(entes_lista)):
+                e1, e2 = entes_lista[i], entes_lista[j]
+                if qnas_por_ente[e1].intersection(qnas_por_ente[e2]):
+                    duplicidad_real = True
+                    entes_cruce_real.update([e1, e2])
+
+        # Si NO hay coincidencia real de QNAs, NO mostrar como duplicado
+        if not duplicidad_real:
+            continue
+
+        for e in entes_cruce_real:
             if not (_allowed_all(entes_usuario) or any(_ente_match(eu, [e]) for eu in entes_usuario)):
                 continue
 
@@ -579,4 +600,3 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 4050))
     log.info("Levantando Flask en 0.0.0.0:%s (debug=%s)", port, True)
     app.run(host="0.0.0.0", port=port, debug=True)
-
