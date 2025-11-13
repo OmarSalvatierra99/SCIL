@@ -2,36 +2,23 @@
 {% block title %}Resultados por Ente - SASP{% endblock %}
 
 {% block content %}
+<style>
+.acordeon-icono {
+  display: inline-block;
+  transition: transform 0.2s ease;
+  font-size: 0.8rem;
+  color: var(--color-accent);
+}
+.acordeon-header:hover {
+  background: linear-gradient(90deg, #003366, var(--color-accent));
+}
+</style>
+
 <div class="report-container">
   <header class="header-flex">
     <h2>Resultados Agrupados por Ente</h2>
     <span class="subtitle">Consulta de posibles duplicidades detectadas</span>
   </header>
-
-  <!-- RESUMEN DE ENTES CARGADOS -->
-  {% if entes_info %}
-  <section class="entes-resumen">
-    <h3>📊 Entes con Datos Cargados</h3>
-    <p class="subtitle-info">Entes que tienen información registrada en el sistema:</p>
-    <div class="entes-grid">
-      {% for ente_nombre, info in entes_info.items() %}
-        {% if info.total > 0 %}
-        <div class="ente-card {% if info.duplicados == 0 %}ente-limpio{% endif %}">
-          <div class="ente-card-header">
-            <strong>{{ info.siglas or ente_nombre }}</strong>
-            <span class="badge-count {% if info.duplicados == 0 %}badge-limpio{% else %}badge-ok{% endif %}">
-              {{ info.total }} registros
-            </span>
-          </div>
-          <div class="ente-card-body">
-            {{ info.nombre_completo[:60] }}{% if info.nombre_completo|length > 60 %}...{% endif %}
-          </div>
-        </div>
-        {% endif %}
-      {% endfor %}
-    </div>
-  </section>
-  {% endif %}
 
   <!-- LEYENDA DE SEMÁFORO -->
   <section class="semaforo-info">
@@ -61,90 +48,169 @@
     </form>
   </div>
 
-  <!-- TABLAS DE RESULTADOS -->
-  {% if resultados %}
-    {% for ente, lista in resultados.items() %}
-      {% if not request.args.get('ente') or request.args.get('ente') == ente %}
-        <section class="ente-bloque">
-          <div class="ente-nombre">{{ ente }}</div>
-          <table class="tabla-resultados">
-            <thead>
-              <tr>
-                <th>RFC</th>
-                <th>Nombre</th>
-                <th>Puesto</th>
-                <th>Entes Duplicados</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for r in lista %}
-              <tr class="fila-result">
-                <td>
-                  {% if r.rfc %}
-                    <a href="{{ url_for('resultados_por_rfc', rfc=r.rfc) }}" class="link-rfc">{{ r.rfc }}</a>
-                  {% else %}
-                    Sin RFC
-                  {% endif %}
-                </td>
-                <td>{{ r.nombre or 'Sin nombre' }}</td>
-                <td>{{ r.puesto or 'Sin puesto' }}</td>
-                <td>
-                  {% if r.entes %}
-                    {% for ente_dup in r.entes %}
-                      {% set estado_tag = r.estado_entes.get(ente_dup, r.estado) if r.estado_entes is defined else r.estado %}
-                      {% set color = (
-                        'verde' if estado_tag == 'Solventado' else
-                        'rojo' if estado_tag == 'No Solventado' else 'gris'
-                      ) %}
-                      <span class="tag-ente {{ color }}">{{ ente_dup }}</span>
-                    {% endfor %}
-                  {% else %}
-                    <span class="tag-ente gris">Sin entes duplicados</span>
-                  {% endif %}
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+  <!-- TABLAS DE RESULTADOS CON ACORDEONES -->
+  {% if entes_info %}
+    {# entes_info ya viene ordenado por NUM desde el backend #}
+    {% for ente_nombre, info in entes_info %}
+      {% if info.total > 0 and (not request.args.get('ente') or request.args.get('ente') == ente_nombre) %}
+        {% set lista = resultados.get(ente_nombre, []) %}
+        {% set tiene_duplicados = info.duplicados > 0 %}
+        {% set tipo_ente = info.tipo|default('ENTE') %}
+
+        <section class="ente-bloque acordeon" data-tipo="{{ tipo_ente }}">
+          <div class="ente-nombre acordeon-header" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
+            <span style="display: flex; align-items: center; gap: 0.8rem;">
+              <span class="acordeon-icono">▶</span>
+              <strong>{{ info.num }}. {{ ente_nombre }}</strong>
+            </span>
+            <span style="display: flex; gap: 1rem; align-items: center; font-size: 0.9rem;">
+              <span style="background: #e0f2fe; color: #0369a1; padding: 0.3rem 0.7rem; border-radius: 6px; font-weight: 600;">
+                {{ info.total }} trabajador{% if info.total != 1 %}es{% endif %}
+              </span>
+              {% if tiene_duplicados %}
+                <span style="background: #fef3c7; color: #92400e; padding: 0.3rem 0.7rem; border-radius: 6px; font-weight: 600;">
+                  {{ info.duplicados }} duplicado{% if info.duplicados != 1 %}s{% endif %}
+                </span>
+              {% else %}
+                <span style="background: #d1fae5; color: #065f46; padding: 0.3rem 0.7rem; border-radius: 6px; font-weight: 600;">
+                  ✓ Sin duplicados
+                </span>
+              {% endif %}
+            </span>
+          </div>
+
+          <div class="acordeon-contenido" style="display: none;">
+            {% if tiene_duplicados %}
+              <table class="tabla-resultados">
+                <thead>
+                  <tr>
+                    <th>RFC</th>
+                    <th>Nombre</th>
+                    <th>Puesto</th>
+                    <th>Entes Duplicados</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for r in lista %}
+                  <tr class="fila-result">
+                    <td>
+                      {% if r.rfc %}
+                        <a href="{{ url_for('resultados_por_rfc', rfc=r.rfc) }}" class="link-rfc">{{ r.rfc }}</a>
+                      {% else %}
+                        Sin RFC
+                      {% endif %}
+                    </td>
+                    <td>{{ r.nombre or 'Sin nombre' }}</td>
+                    <td>{{ r.puesto or 'Sin puesto' }}</td>
+                    <td>
+                      {% if r.entes %}
+                        {% for ente_dup in r.entes %}
+                          {% set estado_tag = r.estado_entes.get(ente_dup, r.estado) if r.estado_entes is defined else r.estado %}
+                          {% set color = (
+                            'verde' if estado_tag == 'Solventado' else
+                            'rojo' if estado_tag == 'No Solventado' else 'gris'
+                          ) %}
+                          <span class="tag-ente {{ color }}">{{ ente_dup }}</span>
+                        {% endfor %}
+                      {% else %}
+                        <span class="tag-ente gris">Sin entes duplicados</span>
+                      {% endif %}
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            {% else %}
+              <div style="padding: 2rem; text-align: center; color: #065f46; background: #ecfdf5; border-radius: 8px; margin: 1rem;">
+                <strong>✓ Este ente no presenta duplicidades</strong>
+                <p style="margin: 0.5rem 0 0 0; font-size: 0.9rem;">
+                  Se han procesado {{ info.total }} trabajador{% if info.total != 1 %}es{% endif %} sin incompatibilidades detectadas.
+                </p>
+              </div>
+            {% endif %}
+          </div>
         </section>
       {% endif %}
     {% endfor %}
   {% else %}
-    <p class="msg-vacio">No hay resultados para mostrar.</p>
+    <p class="msg-vacio">No hay datos cargados en el sistema.</p>
   {% endif %}
 </div>
 
-<!-- Script de búsqueda rápida -->
+<!-- Script de búsqueda y acordeones -->
 <script>
 document.addEventListener("DOMContentLoaded", () => {
   const input = document.getElementById("searchInput");
-  if (!input) {
-    console.warn("⚠️ searchInput no encontrado");
-    return;
-  }
+  const acordeones = document.querySelectorAll(".acordeon");
 
-  input.addEventListener("keyup", () => {
-    const filter = input.value.toLowerCase().trim();
-    const bloques = document.querySelectorAll(".ente-bloque");
+  // ============================================
+  // ACORDEONES: Toggle expandir/colapsar
+  // ============================================
+  acordeones.forEach(acordeon => {
+    const header = acordeon.querySelector(".acordeon-header");
+    const contenido = acordeon.querySelector(".acordeon-contenido");
+    const icono = acordeon.querySelector(".acordeon-icono");
 
-    bloques.forEach(bloque => {
-      const filas = bloque.querySelectorAll(".fila-result");
-      let hayCoincidencias = false;
+    header.addEventListener("click", (e) => {
+      // No toggle si se hace click en un link
+      if (e.target.tagName === "A") return;
 
-      filas.forEach(row => {
-        const text = row.textContent.toLowerCase();
-        if (text.includes(filter)) {
-          row.style.display = "";
-          hayCoincidencias = true;
-        } else {
-          row.style.display = "none";
-        }
-      });
+      const estaExpandido = contenido.style.display !== "none";
 
-      // Ocultar el bloque completo si no hay coincidencias
-      bloque.style.display = hayCoincidencias || filter === "" ? "" : "none";
+      if (estaExpandido) {
+        contenido.style.display = "none";
+        icono.textContent = "▶";
+      } else {
+        contenido.style.display = "block";
+        icono.textContent = "▼";
+      }
     });
   });
+
+  // ============================================
+  // BÚSQUEDA POR RFC/NOMBRE
+  // ============================================
+  if (input) {
+    input.addEventListener("keyup", () => {
+      const filter = input.value.toLowerCase().trim();
+
+      acordeones.forEach(acordeon => {
+        const filas = acordeon.querySelectorAll(".fila-result");
+        let hayCoincidencias = false;
+
+        // Si no hay filas (ente sin duplicados), buscar en el nombre del ente
+        if (filas.length === 0) {
+          const nombreEnte = acordeon.querySelector(".ente-nombre").textContent.toLowerCase();
+          if (nombreEnte.includes(filter)) {
+            hayCoincidencias = true;
+          }
+        } else {
+          // Buscar en las filas de la tabla
+          filas.forEach(row => {
+            const text = row.textContent.toLowerCase();
+            if (text.includes(filter)) {
+              row.style.display = "";
+              hayCoincidencias = true;
+            } else {
+              row.style.display = "none";
+            }
+          });
+        }
+
+        // Mostrar/ocultar acordeón según coincidencias
+        if (filter === "" || hayCoincidencias) {
+          acordeon.style.display = "";
+          // Si hay búsqueda activa y hay coincidencias, expandir automáticamente
+          if (filter !== "" && hayCoincidencias) {
+            acordeon.querySelector(".acordeon-contenido").style.display = "block";
+            acordeon.querySelector(".acordeon-icono").textContent = "▼";
+          }
+        } else {
+          acordeon.style.display = "none";
+        }
+      });
+    });
+  }
 });
 </script>
 {% endblock %}

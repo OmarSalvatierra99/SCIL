@@ -397,7 +397,6 @@ def reporte_por_ente():
         elif modo_permiso == "ENTES":
             permitido = (tipo_ente == "ENTE")
         elif modo_permiso == "MUNICIPIOS":
-            # En este bloque solo recorremos ENTES (no municipios), así que se omiten
             permitido = (tipo_ente == "MUNICIPIO")
         else:
             permitido = any(_ente_match(eu, [ente['clave']]) for eu in entes_usuario)
@@ -413,10 +412,12 @@ def reporte_por_ente():
         total_duplicados = len(agrupado.get(ente_nombre, {}))
 
         entes_info[ente_nombre] = {
+            'num': ente['num'],
             'siglas': ente['siglas'],
             'nombre_completo': ente['nombre'],
             'total': total_trabajadores,
-            'duplicados': total_duplicados
+            'duplicados': total_duplicados,
+            'tipo': tipo_ente  # ENTE o MUNICIPIO
         }
 
         # Si tiene trabajadores pero no duplicidades, agregarlo a entes_con_datos
@@ -427,11 +428,31 @@ def reporte_por_ente():
                 'total': total_trabajadores
             }
 
+    # Función de ordenamiento por NUM jerárquico
+    def orden_por_num(item):
+        """Ordena por NUM respetando jerarquía (1.2.3 antes de 1.10)"""
+        ente_nombre, info = item
+        num_str = str(info.get('num', '999')).strip().rstrip('.')
+        partes = []
+        for parte in num_str.split('.'):
+            try:
+                partes.append(int(parte))
+            except ValueError:
+                partes.append(999)
+        # Rellenar con ceros para comparación consistente
+        while len(partes) < 5:
+            partes.append(0)
+        return tuple(partes)
+
     agrupado_final = {k: list(v.values()) for k, v in agrupado.items()}
+
+    # Ordenar entes_info por NUM
+    entes_info_ordenados = sorted(entes_info.items(), key=orden_por_num)
+
     return render_template(
         "resultados.html",
-        resultados=dict(sorted(agrupado_final.items())),
-        entes_info=dict(sorted(entes_info.items())),
+        resultados=agrupado_final,
+        entes_info=entes_info_ordenados,
         entes_con_datos=dict(sorted(entes_con_datos.items()))
     )
 
