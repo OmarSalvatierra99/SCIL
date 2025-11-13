@@ -24,7 +24,7 @@
     <tbody>
       {% for r in info.registros %}
         {% set qnas = r.qnas.keys() if r.qnas is mapping else [] %}
-        {% set activo_total = qnas|length >= 12 %}
+        {% set activo_total = qnas|length >= 24 %}
 
         {# permisos por ente #}
         {% set ns = namespace(editable=false) %}
