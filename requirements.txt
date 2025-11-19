@@ -1,0 +1,14 @@
+# SCIL - Sistema de Cruce de Información Laboral
+# Dependencias Python
+
+# Framework web
+Flask==3.0.0
+Werkzeug==3.0.1
+
+# Procesamiento de datos
+pandas==2.1.4
+openpyxl==3.1.2
+xlrd==2.0.1
+
+# Utilidades
+python-dotenv==1.0.0

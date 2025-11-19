@@ -1,26 +1,133 @@
-# Entorno virtual
+# ========================================
+# SCIL - Git Ignore
+# ========================================
+
+# ========================================
+# Python
+# ========================================
+# Entornos virtuales
 venv/
 ENV/
 env/
+.venv/
+virtualenv/
 
 # Cachés de Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.pdb
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
 
-# Archivos de base de datos locales
+# Distribución / Empaquetado
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# ========================================
+# SCIL - Archivos específicos
+# ========================================
+# Base de datos
+data/
 *.db
+*.sqlite
 *.sqlite3
 
-# Archivos de subida (no suelen versionarse)
-uploads/
-
-# Archivos de configuración de sistema/editor
+# Logs
+logs/
 *.log
-*.env
-*.DS_Store
-*.swp
+*.log.*
+
+# Archivos temporales de subida
+uploads/
+*.tmp
+*.temp
+
+# Archivos de configuración sensibles
+.env
+.env.local
+.env.production
+
+# Respaldos
+backups/
+*.bak
+*.backup
+
+# ========================================
+# IDEs y Editores
+# ========================================
+# VSCode
 .vscode/
+*.code-workspace
+
+# PyCharm
 .idea/
+*.iml
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# ========================================
+# Sistema Operativo
+# ========================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+.directory
+.Trash-*
+
+# ========================================
+# Archivos antiguos (versión anterior)
+# ========================================
+backup_v1/
+app_new.py
+migrate_to_new_structure.py
+validate_installation.py
 

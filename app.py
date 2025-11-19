@@ -1,300 +1,137 @@
-# ===========================================================
-# app.py  —  SCIL (Sistema de Cruce de Información Laboral)
-# Versión completa con análisis de patrones y cruces de horarios
-# ===========================================================
+"""
+SCIL - Sistema de Cruce de Información Laboral
+Aplicación principal Flask
 
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, send_file
-import os
+Sistema de auditoría de relaciones laborales y horarios docentes
+"""
+
 import secrets
-import csv
-import io
-from math import ceil
-from datetime import datetime
+from flask import Flask
+from pathlib import Path
 
-from data_processor import DataProcessor
-from horarios_processor import HorariosProcessor
-from database import DatabaseManager
+from config import Config, get_config
+from src.database.manager import DatabaseManager
+from src.processors.patterns import PatternsProcessor
+from src.processors.schedules import SchedulesProcessor
+from src.utils.logger import SCILLogger
+from src.web.routes import main_bp, patterns_bp, schedules_bp, init_routes
 
-# -----------------------------------------------------------
-# Configuración base
-# -----------------------------------------------------------
-app = Flask(__name__)
-app.secret_key = secrets.token_hex(16)
-app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32 MB
 
-SECRET_PASSWORD = os.getenv('SCIL_PASSWORD', 'scil2024')
-RESULTS_PER_PAGE = 20
+def create_app(config_name='default'):
+    """
+    Factory para crear la aplicación Flask
 
-# -----------------------------------------------------------
-# Inicialización de componentes
-# -----------------------------------------------------------
-try:
-    db_manager = DatabaseManager()
-    data_processor = DataProcessor()
-    horarios_processor = HorariosProcessor()
-    print("✅ Componentes inicializados correctamente")
-except Exception as e:
-    print(f"❌ Error inicializando componentes: {e}")
-    raise
+    Args:
+        config_name: Nombre de la configuración ('development', 'production', 'default')
 
-# -----------------------------------------------------------
-# Utilidades
-# -----------------------------------------------------------
-@app.before_request
-def ensure_directories():
-    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-    os.makedirs('templates', exist_ok=True)
-    os.makedirs('static', exist_ok=True)
+    Returns:
+        Flask: Aplicación configurada
+    """
+    # Obtener configuración
+    config_class = get_config(config_name)
 
-# -----------------------------------------------------------
-# Autenticación
-# -----------------------------------------------------------
-@app.route('/')
-def index():
-    if 'logged_in' not in session:
-        return redirect(url_for('login'))
-    return redirect(url_for('dashboard'))
+    # Inicializar directorios
+    config_class.init_app()
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        password = request.form.get('password')
-        if password == SECRET_PASSWORD:
-            session['logged_in'] = True
-            return redirect(url_for('dashboard'))
-        else:
-            return render_template('login.html', error="Clave incorrecta")
-    return render_template('login.html')
+    # Logger principal
+    logger = SCILLogger.get_logger('SCIL')
+    logger.info("=" * 80)
+    logger.info("Inicializando SCIL - Sistema de Cruce de Información Laboral")
+    logger.info("=" * 80)
 
-@app.route('/logout')
-def logout():
-    session.pop('logged_in', None)
-    return redirect(url_for('login'))
+    # Crear app Flask
+    app = Flask(
+        __name__,
+        template_folder=str(config_class.TEMPLATE_FOLDER),
+        static_folder=str(config_class.STATIC_FOLDER)
+    )
 
-# -----------------------------------------------------------
-# Dashboard principal
-# -----------------------------------------------------------
-@app.route('/dashboard')
-def dashboard():
-    if 'logged_in' not in session:
-        return redirect(url_for('login'))
-    return render_template('dashboard.html')
+    # Configurar Flask
+    app.secret_key = config_class.SECRET_KEY
+    app.config['UPLOAD_FOLDER'] = str(config_class.UPLOAD_FOLDER)
+    app.config['MAX_CONTENT_LENGTH'] = config_class.MAX_CONTENT_LENGTH
 
-# ===========================================================
-# 1️⃣ ANÁLISIS DE PATRONES LABORALES
-# ===========================================================
-@app.route('/upload', methods=['POST'])
-def upload_file():
-    if 'logged_in' not in session:
-        return jsonify({'error': 'No autorizado'}), 401
+    logger.info(f"Configuración: {config_name}")
+    logger.info(f"Debug: {config_class.DEBUG}")
+    logger.info(f"Host: {config_class.HOST}:{config_class.PORT}")
 
-    if 'file' not in request.files:
-        return jsonify({'error': 'No se encontró archivo'}), 400
-
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No se seleccionó archivo'}), 400
-    if not file.filename.endswith('.xlsx'):
-        return jsonify({'error': 'Solo se permiten archivos Excel (.xlsx)'}), 400
-
-    filename = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-    file.save(filename)
-
+    # Inicializar componentes
     try:
-        print(f"🔄 Procesando archivo de patrones: {filename}")
-        resultados = data_processor.procesar_archivo(filename)
+        logger.info("Inicializando componentes...")
 
-        nuevos, repetidos, _ = db_manager.comparar_con_historico(resultados, tipo_analisis='patrones')
-        db_manager.guardar_resultados(resultados, tipo_analisis='patrones', nombre_archivo=file.filename)
+        db_manager = DatabaseManager(db_path=str(config_class.DATABASE_PATH))
+        patterns_processor = PatternsProcessor()
+        schedules_processor = SchedulesProcessor()
 
-        mensaje = (
-            f"Se procesaron {len(resultados)} hallazgos totales. "
-            f"Nuevos: {len(nuevos)} | Repetidos: {len(repetidos)}."
-        )
-        print(f"✅ Análisis completado: {mensaje}")
+        logger.info("✅ Base de datos inicializada")
+        logger.info("✅ Procesador de patrones inicializado")
+        logger.info("✅ Procesador de horarios inicializado")
 
-        return jsonify({
-            'success': True,
-            'mensaje': mensaje,
-            'total_resultados': len(resultados),
-            'nuevos': len(nuevos),
-            'repetidos': len(repetidos)
-        })
+        # Inicializar rutas con dependencias
+        init_routes(db_manager, patterns_processor, schedules_processor)
+        logger.info("✅ Rutas web configuradas")
 
     except Exception as e:
-        print(f"❌ Error procesando archivo: {e}")
-        return jsonify({'error': str(e)}), 500
-    finally:
-        if os.path.exists(filename):
-            os.remove(filename)
+        logger.error(f"❌ Error inicializando componentes: {e}")
+        raise
 
-@app.route('/resultados')
-def mostrar_resultados():
-    if 'logged_in' not in session:
-        return redirect(url_for('login'))
+    # Registrar blueprints
+    app.register_blueprint(main_bp)
+    app.register_blueprint(patterns_bp)
+    app.register_blueprint(schedules_bp)
 
-    try:
-        page = int(request.args.get('page', 1))
-        search_query = request.args.get('search', '').lower()
-        resultados = db_manager.obtener_resultados(tipo_analisis='patrones')
+    logger.info("✅ Blueprints registrados")
 
-        # Filtro simple por RFC o descripción
-        if search_query:
-            resultados = [
-                r for r in resultados
-                if search_query in r.get('rfc', '').lower()
-                or search_query in r.get('descripcion', '').lower()
-            ]
+    # Hook antes de cada request
+    @app.before_request
+    def ensure_directories():
+        """Asegura que existan los directorios necesarios"""
+        config_class.UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
 
-        total_resultados = len(resultados)
-        total_paginas = ceil(total_resultados / RESULTS_PER_PAGE)
-        start = (page - 1) * RESULTS_PER_PAGE
-        end = start + RESULTS_PER_PAGE
-        resultados_paginados = resultados[start:end]
+    # Manejador de errores
+    @app.errorhandler(404)
+    def not_found(error):
+        logger.warning(f"Página no encontrada: {error}")
+        return "Página no encontrada", 404
 
-        return render_template(
-            'resultados.html',
-            resultados=resultados_paginados,
-            pagina_actual=page,
-            total_paginas=total_paginas,
-            total_resultados=total_resultados,
-            busqueda=search_query
-        )
+    @app.errorhandler(500)
+    def internal_error(error):
+        logger.error(f"Error interno del servidor: {error}")
+        return "Error interno del servidor", 500
 
-    except Exception as e:
-        print(f"❌ Error mostrando resultados: {e}")
-        return render_template('resultados.html', resultados=[], total_paginas=1, total_resultados=0)
+    logger.info("=" * 80)
+    logger.info("✅ SCIL inicializado correctamente")
+    logger.info("=" * 80)
 
-# ===========================================================
-# 2️⃣ ANÁLISIS DE CRUCE DE HORARIOS DOCENTES
-# ===========================================================
-@app.route('/upload_horarios', methods=['POST'])
-def upload_horarios():
-    if 'logged_in' not in session:
-        return jsonify({'error': 'No autorizado'}), 401
+    return app
 
-    if 'file' not in request.files:
-        return jsonify({'error': 'No se encontró archivo'}), 400
 
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No se seleccionó archivo'}), 400
-    if not file.filename.endswith('.xlsx'):
-        return jsonify({'error': 'Solo se permiten archivos Excel (.xlsx)'}), 400
+def main():
+    """Función principal para ejecutar la aplicación"""
+    import os
 
-    filename = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-    file.save(filename)
+    # Obtener configuración del entorno
+    env = os.getenv('SCIL_ENV', 'default')
+    config_class = get_config(env)
 
-    try:
-        print(f"🔄 Procesando archivo de horarios: {filename}")
-        resultados = horarios_processor.procesar_archivo(filename)
+    # Crear y ejecutar app
+    app = create_app(env)
 
-        nuevos, repetidos, _ = db_manager.comparar_con_historico(resultados, tipo_analisis='horarios')
-        db_manager.guardar_resultados(resultados, tipo_analisis='horarios', nombre_archivo=file.filename)
+    print("\n" + "=" * 80)
+    print("🚀 SCIL - Sistema de Cruce de Información Laboral")
+    print("=" * 80)
+    print(f"📊 Servidor: http://{config_class.HOST}:{config_class.PORT}")
+    print(f"🔐 Contraseña: {config_class.PASSWORD}")
+    print(f"📁 Base de datos: {config_class.DATABASE_PATH}")
+    print(f"📝 Logs: {config_class.LOG_FOLDER}")
+    print("=" * 80 + "\n")
 
-        mensaje = (
-            f"Se analizaron {len(resultados)} posibles cruces de horario. "
-            f"Nuevos: {len(nuevos)} | Repetidos: {len(repetidos)}."
-        )
-        print(f"✅ Análisis de horarios completado: {mensaje}")
+    app.run(
+        host=config_class.HOST,
+        port=config_class.PORT,
+        debug=config_class.DEBUG
+    )
 
-        return jsonify({
-            'success': True,
-            'mensaje': mensaje,
-            'total_resultados': len(resultados),
-            'nuevos': len(nuevos),
-            'repetidos': len(repetidos)
-        })
-
-    except Exception as e:
-        print(f"❌ Error procesando horarios: {e}")
-        return jsonify({'error': str(e)}), 500
-    finally:
-        if os.path.exists(filename):
-            os.remove(filename)
-
-@app.route('/resultados_horarios')
-def mostrar_resultados_horarios():
-    if 'logged_in' not in session:
-        return redirect(url_for('login'))
-
-    try:
-        page = int(request.args.get('page', 1))
-        search_query = request.args.get('search', '').lower()
-        resultados = db_manager.obtener_resultados(tipo_analisis='horarios')
-
-        if search_query:
-            resultados = [
-                r for r in resultados
-                if search_query in r.get('rfc', '').lower()
-                or search_query in r.get('descripcion', '').lower()
-            ]
-
-        total_resultados = len(resultados)
-        total_paginas = ceil(total_resultados / RESULTS_PER_PAGE)
-        start = (page - 1) * RESULTS_PER_PAGE
-        end = start + RESULTS_PER_PAGE
-        resultados_paginados = resultados[start:end]
-
-        return render_template(
-            'resultados_horarios.html',
-            resultados=resultados_paginados,
-            pagina_actual=page,
-            total_paginas=total_paginas,
-            total_resultados=total_resultados,
-            busqueda=search_query
-        )
-
-    except Exception as e:
-        print(f"❌ Error mostrando resultados de horarios: {e}")
-        return render_template('resultados_horarios.html', resultados=[], total_paginas=1, total_resultados=0)
-
-# ===========================================================
-# Exportación CSV
-# ===========================================================
-@app.route('/exportar/csv/<tipo>')
-def exportar_csv(tipo):
-    if 'logged_in' not in session:
-        return redirect(url_for('login'))
-    try:
-        resultados = db_manager.obtener_resultados(tipo_analisis=tipo)
-        output = io.StringIO()
-        writer = csv.writer(output)
-        writer.writerow(['RFC', 'Tipo de patrón', 'Severidad', 'Entes', 'Descripción', 'Fecha'])
-
-        for r in resultados:
-            writer.writerow([
-                r.get('rfc', ''),
-                r.get('tipo_patron', ''),
-                r.get('severidad', ''),
-                ', '.join(r.get('entes', [])),
-                r.get('descripcion', ''),
-                r.get('fecha_comun', '')
-            ])
-
-        output.seek(0)
-        csv_bytes = io.BytesIO(output.getvalue().encode('utf-8-sig'))
-        return send_file(
-            csv_bytes,
-            mimetype='text/csv',
-            as_attachment=True,
-            download_name=f"{tipo}_resultados_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
-        )
-    except Exception as e:
-        print(f"❌ Error exportando CSV: {e}")
-        return jsonify({'error': str(e)}), 500
-
-# -----------------------------------------------------------
-# Inicialización
-# -----------------------------------------------------------
-def init_app():
-    print("🚀 Inicializando aplicación SCIL...")
-    os.makedirs('uploads', exist_ok=True)
-    db_manager.ensure_initialized()
-    print("✅ SCIL listo para análisis")
 
 if __name__ == '__main__':
-    init_app()
-    app.run(host='0.0.0.0', port=4050, debug=True)
-
+    main()
