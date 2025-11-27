@@ -1,29 +1,17 @@
 # SASP — Personnel Services Audit System
 
-**SASP** is an institutional web platform developed for the **Superior Audit Office of Tlaxcala (OFS)**.  
-It analyzes and cross-checks labor data from public employees to detect patterns, duplications, and schedule overlaps automatically.
+Institutional audit platform analyzing labor data from public employees across government entities. Detects schedule conflicts, duplicate records, and overlapping work periods (quincenas) for compliance auditing. Built for the **Superior Audit Office of Tlaxcala (OFS)**.
 
 🔗 **Live:** [https://scil.omar-xyz.shop](https://scil.omar-xyz.shop)
 
 ---
 
 ## Features
-
-- **Labor pattern analysis** and detection of repeated records across public entities.  
-- **Schedule conflict detection** for identifying duplicated work hours.  
-- **Historical comparison** to highlight new or repeated findings.  
-- **Report export** in standardized institutional formats.  
-- **Secure, simple web interface** accessible from any browser.
+- **Labor Pattern Analysis** — Detects repeated employee records across entities, identifies schedule conflicts, and tracks biweekly periods (QNA) with cross-entity verification
+- **Conflict Detection** — Real-time schedule overlap detection, same RFC in multiple entities analysis, and historical comparison
+- **Permission System** — Role-based access control with superuser full access, entity-scoped permissions, and user catalog management
+- **Excel Integration** — Template download system, batch file processing, auto-entity detection from sheets, and QNA validation (24 periods)
 
 ---
 
-## Usage
-
-1. Go to [https://scil.omar-xyz.shop](https://scil.omar-xyz.shop).  
-2. Log in using institutional credentials.  
-3. Upload Excel files with labor or schedule information.  
-4. Review analysis results and download reports.
-
----
-
-© 2025 Omar Gabriel Salvatierra García — Institutional Software, OFS Tlaxcala
+© 2025 **Omar Gabriel Salvatierra Garcia** — Institutional Software, OFS Tlaxcala

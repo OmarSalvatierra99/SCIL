@@ -56,6 +56,80 @@ class DataProcessor:
     # -------------------------------------------------------
     # Procesamiento principal
     # -------------------------------------------------------
+    def extraer_registros_individuales(self, archivos):
+        """
+        Extrae TODOS los registros individuales (RFC+ENTE) sin procesar cruces.
+        Esto permite guardarlos/actualizarlos en la BD sin duplicar.
+
+        Returns:
+            (registros_individuales, alertas)
+        """
+        print(f"📊 Procesando {len(archivos)} archivo(s) laborales...")
+        registros = []
+        alertas = []
+
+        for f in archivos:
+            nombre_archivo = getattr(f, "filename", getattr(f, "name", "archivo.xlsx"))
+            print(f"📘 Leyendo archivo: {nombre_archivo}")
+            xl = pd.ExcelFile(f)
+
+            for hoja in xl.sheet_names:
+                ente_label = hoja.strip().upper()
+                clave_ente = self.normalizar_ente_clave(ente_label)
+
+                if not clave_ente:
+                    alerta = f"⚠️ Hoja '{hoja}' no encontrada en catálogo de entes. Verifique el nombre."
+                    print(alerta)
+                    alertas.append({
+                        "tipo": "ente_no_encontrado",
+                        "mensaje": alerta,
+                        "hoja": hoja,
+                        "archivo": nombre_archivo
+                    })
+                    continue
+
+                df = xl.parse(hoja).rename(columns=lambda x: str(x).strip().upper().replace(" ", "_"))
+                columnas_base = {"RFC", "NOMBRE", "PUESTO", "FECHA_ALTA", "FECHA_BAJA"}
+
+                if not columnas_base.issubset(df.columns):
+                    alerta = f"⚠️ Hoja '{hoja}' omitida: faltan columnas requeridas."
+                    print(alerta)
+                    alertas.append({
+                        "tipo": "columnas_faltantes",
+                        "mensaje": alerta,
+                        "hoja": hoja,
+                        "archivo": nombre_archivo
+                    })
+                    continue
+
+                qnas = [c for c in df.columns if re.match(r"^QNA([1-9]|1[0-9]|2[0-4])$", c)]
+                registros_validos = 0
+
+                for _, row in df.iterrows():
+                    rfc = self.limpiar_rfc(row.get("RFC"))
+                    if not rfc:
+                        continue
+
+                    qnas_activas = {q: row.get(q) for q in qnas if self._es_activo(row.get(q))}
+
+                    # Agregar registro individual
+                    registros.append({
+                        "rfc": rfc,
+                        "ente": clave_ente,
+                        "nombre": str(row.get("NOMBRE", "")).strip(),
+                        "puesto": str(row.get("PUESTO", "")).strip(),
+                        "fecha_ingreso": self.limpiar_fecha(row.get("FECHA_ALTA")),
+                        "fecha_egreso": self.limpiar_fecha(row.get("FECHA_BAJA")),
+                        "qnas": qnas_activas,
+                        "monto": row.get("TOT_PERC"),
+                    })
+                    registros_validos += 1
+
+                print(f"✅ Hoja '{hoja}': {registros_validos} registros procesados.")
+
+        print(f"📈 {len(registros)} registros individuales extraídos.")
+        return registros, alertas
+
     def procesar_archivos(self, archivos):
         print(f"📊 Procesando {len(archivos)} archivo(s) laborales...")
         entes_rfc = defaultdict(list)
@@ -160,9 +234,11 @@ class DataProcessor:
         año_actual = datetime.now().year
 
         for rfc, registros in entes_rfc.items():
+            # Verificar si hay al menos 2 registros (diferentes entes)
             if len(registros) < 2:
                 continue
 
+            # Mapear QNAs por ente para detectar cruces
             qna_map = defaultdict(list)
 
             for reg in registros:
@@ -170,22 +246,35 @@ class DataProcessor:
                     if self._es_activo(valor):
                         qna_map[qna].append(reg)
 
-            for qna, regs_activos in qna_map.items():
-                entes_activos = sorted({r["ente"] for r in regs_activos})
+            # Verificar si hay al menos una QNA con cruce real (2+ entes)
+            qnas_con_cruce = []
+            entes_involucrados = set()
 
-                if len(entes_activos) > 1:
-                    num = int(re.sub(r"\D", "", qna))
-                    hallazgos.append({
-                        "rfc": rfc,
-                        "nombre": regs_activos[0].get("nombre", ""),
-                        "entes": entes_activos,
-                        "fecha_comun": f"{año_actual}Q{num:02d}",
-                        "tipo_patron": "CRUCE_ENTRE_ENTES_QNA",
-                        "descripcion": f"Activo en más de un ente en la quincena {qna}.",
-                        "registros": regs_activos,
-                        "estado": "Sin valoración",
-                        "solventacion": ""
-                    })
+            for qna, regs_activos in qna_map.items():
+                entes_en_qna = {r["ente"] for r in regs_activos}
+                if len(entes_en_qna) > 1:
+                    qnas_con_cruce.append(qna)
+                    entes_involucrados.update(entes_en_qna)
+
+            # Si NO hay cruces reales, saltar este RFC
+            if not qnas_con_cruce:
+                continue
+
+            # Crear UN SOLO hallazgo consolidado para este RFC
+            # Incluir todos los entes involucrados en cualquier cruce
+            entes_list = sorted(list(entes_involucrados))
+
+            hallazgos.append({
+                "rfc": rfc,
+                "nombre": registros[0].get("nombre", ""),
+                "entes": entes_list,
+                "qnas_cruce": sorted(qnas_con_cruce),  # Lista de QNAs con cruce
+                "tipo_patron": "CRUCE_ENTRE_ENTES_QNA",
+                "descripcion": f"Activo en {len(entes_list)} entes durante {len(qnas_con_cruce)} quincena(s) simultáneas.",
+                "registros": registros,  # TODOS los registros del RFC
+                "estado": "Sin valoración",
+                "solventacion": ""
+            })
 
         return hallazgos
 

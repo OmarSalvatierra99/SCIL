@@ -253,22 +253,21 @@ def upload_laboral():
         nombres = [getattr(f, "filename", "archivo.xlsx") for f in files]
         log.info("Upload recibido: %s", nombres)
 
-        # Procesar archivos y obtener alertas
-        resultados, alertas = data_processor.procesar_archivos(files)
-        log.info("Registros detectados=%d | Alertas=%d", len(resultados), len(alertas))
+        # Procesar archivos y extraer TODOS los registros individuales
+        registros_individuales, alertas = data_processor.extraer_registros_individuales(files)
+        log.info("Registros individuales extraídos=%d | Alertas=%d", len(registros_individuales), len(alertas))
 
-        nuevos_res, repetidos, n_rep = db_manager.comparar_con_historico(resultados)
-        n_guardados, n_dup = db_manager.guardar_resultados(nuevos_res)
-        total_dup = n_rep + n_dup
+        # Guardar/actualizar registros individuales (sin duplicar RFC+ENTE)
+        n_insertados, n_actualizados = db_manager.guardar_registros_individuales(registros_individuales)
 
-        log.info("Guardados=%d | Duplicados=%d", n_guardados, total_dup)
+        log.info("Insertados=%d | Actualizados=%d", n_insertados, n_actualizados)
 
         response = {
-            "mensaje": f"Procesamiento completado. Guardados {n_guardados} trabajadores, detectados {total_dup} duplicados.",
-            "total_resultados": len(resultados),
-            "nuevos": n_guardados,
-            "duplicados": total_dup,
-            "alertas": alertas  # Incluir alertas en la respuesta
+            "mensaje": f"Procesamiento completado. {n_insertados} nuevos registros, {n_actualizados} actualizados.",
+            "total_procesados": len(registros_individuales),
+            "insertados": n_insertados,
+            "actualizados": n_actualizados,
+            "alertas": alertas
         }
 
         return jsonify(response)
@@ -282,38 +281,18 @@ def upload_laboral():
 # -----------------------------------------------------------
 @app.route("/resultados")
 def reporte_por_ente():
-    resultados, _ = db_manager.obtener_resultados_paginados("laboral", None, 1, 10000)
+    # Obtener cruces reales y filtrar solo los que tienen duplicidad real (intersección de QNAs)
+    resultados = db_manager.obtener_cruces_reales()
+    resultados_filtrados = _filtrar_duplicados_reales(resultados)
+
     entes_usuario = session.get("entes", [])
     agrupado = {}
 
     modo_permiso = _allowed_all(entes_usuario)
 
-    for r in resultados:
-        # SOLO procesar registros con duplicidad real (más de un ente)
-        # Detectar si realmente existe una incompatibilidad (misma QNA en más de un ente)
-        registros_rfc = r.get("registros", [])
-        qnas_por_ente = {}
-
-        for reg in registros_rfc:
-            ente = reg.get("ente")
-            qnas = set(reg.get("qnas", {}).keys())
-            qnas_por_ente[ente] = qnas
-
-        # Buscar intersección real
-        duplicidad_real = False
-        entes_cruce_real = set()
-
-        entes_lista = list(qnas_por_ente.keys())
-        for i in range(len(entes_lista)):
-            for j in range(i + 1, len(entes_lista)):
-                e1, e2 = entes_lista[i], entes_lista[j]
-                if qnas_por_ente[e1].intersection(qnas_por_ente[e2]):
-                    duplicidad_real = True
-                    entes_cruce_real.update([e1, e2])
-
-        # Si NO hay coincidencia real de QNAs, NO mostrar como duplicado
-        if not duplicidad_real:
-            continue
+    for r in resultados_filtrados:
+        # Los entes con cruce real ya fueron calculados en _filtrar_duplicados_reales
+        entes_cruce_real = set(r.get("entes_cruce_real", []))
 
         for e in entes_cruce_real:
             # Determinar tipo de ente (ENTE / MUNICIPIO)
@@ -375,14 +354,14 @@ def reporte_por_ente():
     entes_info = {}       # {nombre_ente: {siglas, total_trabajadores}}
     entes_con_datos = {}  # Entes con trabajadores cargados (incluso sin duplicidades)
 
-    # Contar trabajadores por ente (incluyendo los que no tienen duplicidades)
+    # Contar trabajadores por ente desde la tabla de registros
+    trabajadores_por_ente_clave = db_manager.contar_trabajadores_por_ente()
+
+    # Convertir claves a nombres display
     trabajadores_por_ente = {}
-    for r in resultados:
-        for reg in r.get("registros", []):
-            ente_clave = reg.get("ente")
-            if ente_clave:
-                ente_display = _ente_display(ente_clave)
-                trabajadores_por_ente[ente_display] = trabajadores_por_ente.get(ente_display, 0) + 1
+    for clave, total in trabajadores_por_ente_clave.items():
+        ente_display = _ente_display(clave)
+        trabajadores_por_ente[ente_display] = total
 
     for ente in todos_entidades:
         ente_nombre = ente['siglas'] or ente['nombre']
@@ -545,13 +524,68 @@ def actualizar_estado():
         return jsonify({"error": str(e)}), 500
 
 # -----------------------------------------------------------
+# UTIL: filtrar solo duplicados reales (con intersección de QNAs)
+# -----------------------------------------------------------
+def _filtrar_duplicados_reales(resultados):
+    """
+    Filtra resultados para incluir SOLO registros con duplicidad real:
+    - Mismos RFC en múltiples entes
+    - Con intersección de QNAs (mismo periodo activo en ambos entes)
+
+    Retorna: lista de resultados filtrados con entes_cruce_real agregado
+    """
+    resultados_filtrados = []
+
+    for r in resultados:
+        # Detectar si existe incompatibilidad real (misma QNA en más de un ente)
+        registros_rfc = r.get("registros", [])
+        qnas_por_ente = {}
+
+        for reg in registros_rfc:
+            ente = reg.get("ente")
+            qnas = set(reg.get("qnas", {}).keys())
+            qnas_por_ente[ente] = qnas
+
+        # Buscar intersección real
+        duplicidad_real = False
+        entes_cruce_real = set()
+
+        entes_lista = list(qnas_por_ente.keys())
+        for i in range(len(entes_lista)):
+            for j in range(i + 1, len(entes_lista)):
+                e1, e2 = entes_lista[i], entes_lista[j]
+                if qnas_por_ente[e1].intersection(qnas_por_ente[e2]):
+                    duplicidad_real = True
+                    entes_cruce_real.update([e1, e2])
+
+        # Si NO hay coincidencia real de QNAs, NO incluir
+        if not duplicidad_real:
+            continue
+
+        # Agregar información de entes con cruce real
+        r_filtrado = r.copy()
+        r_filtrado["entes_cruce_real"] = list(entes_cruce_real)
+        resultados_filtrados.append(r_filtrado)
+
+    return resultados_filtrados
+
+# -----------------------------------------------------------
 # UTIL: construir filas exportables
 # -----------------------------------------------------------
 def _construir_filas_export(resultados):
     agregados = {}
     for r in resultados:
-        entes_cruce = r.get("entes") or []
-        for reg in (r.get("registros") or []):
+        entes_cruce = r.get("entes_cruce_real") or []
+        registros = r.get("registros") or []
+
+        # Pre-calcular QNAs por ente para este RFC
+        qnas_por_ente = {}
+        for reg in registros:
+            ente = reg.get("ente")
+            qnas = set(reg.get("qnas", {}).keys())
+            qnas_por_ente[ente] = qnas
+
+        for reg in registros:
             ente_origen = reg.get("ente") or "Sin Ente"
             key = (
                 r.get("rfc"),
@@ -578,15 +612,22 @@ def _construir_filas_export(resultados):
                     "_solventacion": r.get("solventacion", "")
                 }
 
-            if isinstance(reg.get("qnas"), dict):
-                for q in reg["qnas"].keys():
-                    qnum = q.replace("QNA", "").strip()
-                    if qnum.isdigit():
-                        agregados[key]["_qnas_set"].add(int(qnum))
+            # CALCULAR SOLO LAS QNAS CON INTERSECCIÓN REAL
+            qnas_ente_actual = qnas_por_ente.get(ente_origen, set())
 
-            for e in entes_cruce:
-                if _sanitize_text(e) != _sanitize_text(ente_origen):
-                    agregados[key]["_entes_incomp_set"].add(e)
+            # Comparar con todos los otros entes y agregar solo las QNAs que se intersectan
+            for otro_ente, qnas_otro in qnas_por_ente.items():
+                if _sanitize_text(otro_ente) != _sanitize_text(ente_origen):
+                    # Calcular intersección
+                    interseccion = qnas_ente_actual.intersection(qnas_otro)
+                    if interseccion:
+                        # Agregar ente a la lista de incompatibilidades
+                        agregados[key]["_entes_incomp_set"].add(otro_ente)
+                        # Agregar solo las QNAs con intersección
+                        for qna in interseccion:
+                            qnum = qna.replace("QNA", "").strip()
+                            if qnum.isdigit():
+                                agregados[key]["_qnas_set"].add(int(qnum))
 
     # === Cargar comentarios reales desde la tabla solventaciones ===
     conn = db_manager._connect()
@@ -648,8 +689,15 @@ def exportar_por_ente():
     if not ente_sel:
         return jsonify({"error": "No se seleccionó un ente"}), 400
 
-    resultados, _ = db_manager.obtener_resultados_paginados("laboral", None, 1, 100000)
-    filas = _construir_filas_export(resultados)
+    # Obtener cruces y filtrar solo los que tienen duplicidad real (intersección de QNAs)
+    resultados = db_manager.obtener_cruces_reales()
+    resultados_filtrados = _filtrar_duplicados_reales(resultados)
+    filas = _construir_filas_export(resultados_filtrados)
+
+    # Filtrar registros con N/A en Quincenas (sin intersección temporal)
+    filas = [f for f in filas if f.get("Quincenas") != "N/A"]
+
+    # Filtrar por ente seleccionado
     filas = [f for f in filas if _ente_match(ente_sel, [f["Ente Origen"]])]
     if not filas:
         return jsonify({"error": "No se encontraron registros para el ente seleccionado."}), 404
@@ -678,8 +726,14 @@ def exportar_por_ente():
 @app.route("/exportar_general")
 def exportar_excel_general():
     formato = request.args.get("formato", "").lower()
-    resultados, _ = db_manager.obtener_resultados_paginados("laboral", None, 1, 100000)
-    filas = _construir_filas_export(resultados)
+    # Obtener cruces y filtrar solo los que tienen duplicidad real (intersección de QNAs)
+    resultados = db_manager.obtener_cruces_reales()
+    resultados_filtrados = _filtrar_duplicados_reales(resultados)
+    filas = _construir_filas_export(resultados_filtrados)
+
+    # Filtrar registros con N/A en Quincenas (sin intersección temporal)
+    filas = [f for f in filas if f.get("Quincenas") != "N/A"]
+
     if not filas:
         return jsonify({"error": "Sin datos para exportar."}), 404
 

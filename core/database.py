@@ -7,6 +7,7 @@ import sqlite3
 import json
 import hashlib
 from pathlib import Path
+from collections import defaultdict
 
 
 class DatabaseManager:
@@ -37,6 +38,21 @@ class DatabaseManager:
                 datos TEXT NOT NULL,
                 hash_firma TEXT UNIQUE,
                 fecha_analisis TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS registros_laborales (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                rfc TEXT NOT NULL,
+                ente TEXT NOT NULL,
+                nombre TEXT NOT NULL,
+                puesto TEXT,
+                fecha_ingreso TEXT,
+                fecha_egreso TEXT,
+                monto REAL,
+                qnas TEXT NOT NULL,
+                fecha_carga TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(rfc, ente)
             );
 
             CREATE TABLE IF NOT EXISTS solventaciones (
@@ -277,6 +293,180 @@ class DatabaseManager:
                 repetidos.append(r)
         return nuevos_validos, repetidos, len(repetidos)
 
+    def guardar_registros_individuales(self, registros):
+        """
+        Guarda o actualiza registros individuales por RFC+ENTE.
+        Si ya existe el registro, lo actualiza. Si es nuevo, lo inserta.
+
+        Args:
+            registros: Lista de diccionarios con datos de empleados por ente
+
+        Returns:
+            (insertados, actualizados)
+        """
+        if not registros:
+            return 0, 0
+
+        conn = self._connect()
+        cur = conn.cursor()
+        insertados, actualizados = 0, 0
+
+        for reg in registros:
+            rfc = reg.get("rfc", "")
+            ente = reg.get("ente", "")
+
+            if not rfc or not ente:
+                continue
+
+            # Serializar QNAs a JSON
+            qnas_json = json.dumps(reg.get("qnas", {}), ensure_ascii=False)
+
+            try:
+                # Intentar insertar o actualizar usando ON CONFLICT
+                cur.execute("""
+                    INSERT INTO registros_laborales
+                    (rfc, ente, nombre, puesto, fecha_ingreso, fecha_egreso, monto, qnas)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(rfc, ente) DO UPDATE SET
+                        nombre = excluded.nombre,
+                        puesto = excluded.puesto,
+                        fecha_ingreso = excluded.fecha_ingreso,
+                        fecha_egreso = excluded.fecha_egreso,
+                        monto = excluded.monto,
+                        qnas = excluded.qnas,
+                        fecha_actualizacion = CURRENT_TIMESTAMP
+                """, (
+                    rfc,
+                    ente,
+                    reg.get("nombre", ""),
+                    reg.get("puesto", ""),
+                    reg.get("fecha_ingreso"),
+                    reg.get("fecha_egreso"),
+                    reg.get("monto"),
+                    qnas_json
+                ))
+
+                # Verificar si fue INSERT o UPDATE
+                if cur.rowcount > 0:
+                    # Verificar si ya existía
+                    cur.execute("""
+                        SELECT COUNT(*) FROM registros_laborales
+                        WHERE rfc=? AND ente=? AND fecha_carga < fecha_actualizacion
+                    """, (rfc, ente))
+                    if cur.fetchone()[0] > 0:
+                        actualizados += 1
+                    else:
+                        insertados += 1
+
+            except Exception as e:
+                print(f"⚠️  Error guardando RFC={rfc}, ENTE={ente}: {e}")
+                continue
+
+        conn.commit()
+        conn.close()
+        return insertados, actualizados
+
+    def contar_trabajadores_por_ente(self):
+        """
+        Cuenta el total de trabajadores (RFCs únicos) por ente.
+
+        Returns:
+            dict: {ente_clave: cantidad_de_rfc}
+        """
+        conn = self._connect()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT ente, COUNT(DISTINCT rfc) as total
+            FROM registros_laborales
+            GROUP BY ente
+        """)
+
+        resultado = {}
+        for row in cur.fetchall():
+            resultado[row["ente"]] = row["total"]
+
+        conn.close()
+        return resultado
+
+    def obtener_cruces_reales(self):
+        """
+        Detecta empleados que están activos en más de un ente durante la misma QNA.
+
+        Returns:
+            Lista de diccionarios con información de cruces detectados
+        """
+        conn = self._connect()
+        cur = conn.cursor()
+
+        # Obtener todos los registros
+        cur.execute("""
+            SELECT rfc, ente, nombre, puesto, fecha_ingreso, fecha_egreso, monto, qnas
+            FROM registros_laborales
+            ORDER BY rfc, ente
+        """)
+
+        registros = []
+        for row in cur.fetchall():
+            registros.append({
+                "rfc": row["rfc"],
+                "ente": row["ente"],
+                "nombre": row["nombre"],
+                "puesto": row["puesto"],
+                "fecha_ingreso": row["fecha_ingreso"],
+                "fecha_egreso": row["fecha_egreso"],
+                "monto": row["monto"],
+                "qnas": json.loads(row["qnas"])
+            })
+
+        conn.close()
+
+        # Agrupar por RFC
+        rfcs_map = defaultdict(list)
+        for reg in registros:
+            rfcs_map[reg["rfc"]].append(reg)
+
+        # Detectar cruces reales
+        cruces = []
+        for rfc, regs in rfcs_map.items():
+            if len(regs) < 2:
+                continue
+
+            # Verificar si hay cruces de QNAs entre diferentes entes
+            qnas_por_ente = {}
+            for reg in regs:
+                qnas_activas = set(reg["qnas"].keys())
+                qnas_por_ente[reg["ente"]] = qnas_activas
+
+            # Buscar intersecciones
+            entes_list = list(qnas_por_ente.keys())
+            qnas_con_cruce = set()
+            entes_con_cruce = set()
+
+            for i in range(len(entes_list)):
+                for j in range(i + 1, len(entes_list)):
+                    e1, e2 = entes_list[i], entes_list[j]
+                    interseccion = qnas_por_ente[e1].intersection(qnas_por_ente[e2])
+                    if interseccion:
+                        qnas_con_cruce.update(interseccion)
+                        entes_con_cruce.update([e1, e2])
+
+            # Si hay cruce real, agregarlo
+            if qnas_con_cruce:
+                cruces.append({
+                    "rfc": rfc,
+                    "nombre": regs[0]["nombre"],
+                    "entes": sorted(list(entes_con_cruce)),
+                    "qnas_cruce": sorted(list(qnas_con_cruce)),
+                    "tipo_patron": "CRUCE_ENTRE_ENTES_QNA",
+                    "descripcion": f"Activo en {len(entes_con_cruce)} entes durante {len(qnas_con_cruce)} quincena(s) simultáneas.",
+                    "registros": regs,
+                    "estado": "Sin valoración",
+                    "solventacion": ""
+                })
+
+        return cruces
+
     def guardar_resultados(self, resultados):
         if not resultados:
             return 0, 0
@@ -322,48 +512,51 @@ class DatabaseManager:
         return resultados, len(resultados)
 
     def obtener_resultados_por_rfc(self, rfc):
+        """
+        Obtiene todos los registros de un RFC específico desde la tabla de registros individuales.
+
+        Returns:
+            dict con información consolidada del RFC o None si no existe
+        """
         conn = self._connect()
         cur = conn.cursor()
+
         cur.execute("""
-            SELECT datos FROM laboral
-            WHERE UPPER(json_extract(datos, '$.rfc')) = UPPER(?)
-            ORDER BY id DESC
+            SELECT rfc, ente, nombre, puesto, fecha_ingreso, fecha_egreso, monto, qnas
+            FROM registros_laborales
+            WHERE UPPER(rfc) = UPPER(?)
+            ORDER BY ente
         """, (rfc,))
+
         rows = cur.fetchall()
         conn.close()
+
         if not rows:
             return None
 
         registros = []
-        for row in rows:
-            try:
-                registros.append(json.loads(row[0]))
-            except Exception:
-                continue
-        if not registros:
-            return None
+        entes = set()
+        nombre = ""
 
-        vistos, registros_unicos = set(), []
-        for r in registros:
-            for reg in r.get("registros", []):
-                clave = (
-                    reg.get("ente"),
-                    reg.get("puesto"),
-                    reg.get("monto"),
-                    reg.get("fecha_ingreso"),
-                    reg.get("fecha_egreso"),
-                )
-                if clave not in vistos:
-                    vistos.add(clave)
-                    registros_unicos.append(reg)
+        for row in rows:
+            nombre = row["nombre"]  # Tomar el nombre (debería ser el mismo en todos)
+            entes.add(row["ente"])
+            registros.append({
+                "ente": row["ente"],
+                "puesto": row["puesto"],
+                "fecha_ingreso": row["fecha_ingreso"],
+                "fecha_egreso": row["fecha_egreso"],
+                "monto": row["monto"],
+                "qnas": json.loads(row["qnas"])
+            })
 
         return {
             "rfc": rfc,
-            "nombre": registros[0].get("nombre", ""),
-            "entes": list({e for r in registros for e in r.get("entes", [])}),
-            "registros": registros_unicos,
-            "estado": registros[-1].get("estado", "Sin valoración"),
-            "solventacion": registros[-1].get("solventacion", "")
+            "nombre": nombre,
+            "entes": sorted(list(entes)),
+            "registros": registros,
+            "estado": "Sin valoración",  # Se actualiza desde solventaciones
+            "solventacion": ""
         }
 
     # -------------------------------------------------------
