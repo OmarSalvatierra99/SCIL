@@ -38,14 +38,15 @@
 
     <!-- Catálogo de Soluciones (visible solo si el estado es Solventado o No Solventado) -->
     <div class="form-group" id="catalogoContainer" style="display: none;">
-      <label for="catalogo">Catálogo de Soluciones:</label>
+      <label for="catalogo">Motivo de la Solventación:</label>
       <select id="catalogo" name="catalogo" required>
-        <option value="">Selecciona una solución...</option>
-        <option value="Ajuste de configuración" {% if catalogo_prev == 'Ajuste de configuración' %}selected{% endif %}>Ajuste de configuración</option>
-        <option value="Actualización de software" {% if catalogo_prev == 'Actualización de software' %}selected{% endif %}>Actualización de software</option>
-        <option value="Reemplazo de hardware" {% if catalogo_prev == 'Reemplazo de hardware' %}selected{% endif %}>Reemplazo de hardware</option>
-        <option value="Capacitación al usuario" {% if catalogo_prev == 'Capacitación al usuario' %}selected{% endif %}>Capacitación al usuario</option>
-        <option value="Revisión de documentación" {% if catalogo_prev == 'Revisión de documentación' %}selected{% endif %}>Revisión de documentación</option>
+        <option value="">Selecciona una opción...</option>
+        <option value="Presentan horarios laborales autorizados y actualizados que acreditan la compatibilidad." {% if catalogo_prev == 'Presentan horarios laborales autorizados y actualizados que acreditan la compatibilidad.' %}selected{% endif %}>Presentan horarios laborales autorizados y actualizados que acreditan la compatibilidad.</option>
+        <option value="Remiten documentación que acredita el reintegro de los recursos observados." {% if catalogo_prev == 'Remiten documentación que acredita el reintegro de los recursos observados.' %}selected{% endif %}>Remiten documentación que acredita el reintegro de los recursos observados.</option>
+        <option value="Presentan la cancelación de cheques que no fueron cobrados por el servidor público observado." {% if catalogo_prev == 'Presentan la cancelación de cheques que no fueron cobrados por el servidor público observado.' %}selected{% endif %}>Presentan la cancelación de cheques que no fueron cobrados por el servidor público observado.</option>
+        <option value="Documentan que el servidor público no laboró en el periodo observado, solo tuvo pagos por liquidación o indemnización." {% if catalogo_prev == 'Documentan que el servidor público no laboró en el periodo observado, solo tuvo pagos por liquidación o indemnización.' %}selected{% endif %}>Documentan que el servidor público no laboró en el periodo observado, solo tuvo pagos por liquidación o indemnización.</option>
+        <option value="Presentan permiso de horario convenido, estableciendo el horario en que se reponen las horas." {% if catalogo_prev == 'Presentan permiso de horario convenido, estableciendo el horario en que se reponen las horas.' %}selected{% endif %}>Presentan permiso de horario convenido, estableciendo el horario en que se reponen las horas.</option>
+        <option value="Remiten oficios de licencia con goce de sueldo." {% if catalogo_prev == 'Remiten oficios de licencia con goce de sueldo.' %}selected{% endif %}>Remiten oficios de licencia con goce de sueldo.</option>
         <option value="Otro" {% if catalogo_prev == 'Otro' %}selected{% endif %}>Otro</option>
       </select>
     </div>
