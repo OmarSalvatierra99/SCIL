@@ -18,7 +18,7 @@
         <th>Fecha Alta</th>
         <th>Fecha Baja</th>
         <th>Estado</th>
-        <th>Acción</th>
+        <th>Valoración</th>
       </tr>
     </thead>
     <tbody>
@@ -75,7 +75,7 @@
             {% if ns.editable %}
               <button class="btn btn-primary"
                       onclick="window.location.href='{{ url_for('solventacion_detalle', rfc=rfc) }}?ente={{ r.ente }}'">
-                {% if r.estado_ente == 'Solventado' %}Editar{% else %}Solventar{% endif %}
+                {% if r.estado_ente == 'Solventado' %}Editar{% else %}Editar{% endif %}
               </button>
             {% else %}
               <span class="bloqueado">Bloqueado</span>

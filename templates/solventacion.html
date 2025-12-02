@@ -18,27 +18,53 @@
 
   <form id="solventacionForm"
         method="post"
-        action="{{ url_for('solventacion_detalle', rfc=rfc) }}?ente={{ request.args.get('ente') }}"
+        action="{{ url_for('solventacion_detalle', rfc=rfc) }}"
         data-rfc="{{ rfc }}">
-    <!-- Captura el ente pasado en la URL -->
-    <input type="hidden" name="ente" value="{{ request.args.get('ente') or info.entes[0] }}">
 
+    <!-- Captura el ente pasado en la URL -->
+    <input type="hidden" name="ente" value="{{ request.args.get('ente') or (info.entes[0] if info.entes else '') }}">
+
+    <!-- Estado de valoración -->
     <div class="form-group">
       <label for="estado">Estado de valoración:</label>
       <select id="estado" name="estado" required>
-        <option value="">Selecciona estado...</option>
+        <option value="Sin valoración" {% if estado_prev == 'Sin valoración' or not estado_prev %}selected{% endif %}>
+          Sin valoración
+        </option>
         <option value="Solventado" {% if estado_prev == 'Solventado' %}selected{% endif %}>Solventado</option>
         <option value="No Solventado" {% if estado_prev == 'No Solventado' %}selected{% endif %}>No Solventado</option>
-        <option value="Sin valoración" {% if estado_prev == 'Sin valoración' %}selected{% endif %}>Sin valoración</option>
       </select>
     </div>
 
+    <!-- Valoración -->
     <div class="form-group">
-      <label for="solventacion">Comentarios o justificación:</label>
-      <textarea id="solventacion" name="solventacion" rows="4"
-        placeholder="Describe brevemente la razón de la solventación...">{{ solventacion_prev or '' }}</textarea>
+      <label for="valoracion">Valoración:</label>
+      <textarea id="valoracion" name="valoracion" rows="4"
+        placeholder="Describe brevemente la valoración del caso...">{{ valoracion_prev or '' }}</textarea>
     </div>
 
+    <!-- Catálogo de Soluciones (visible solo si el estado es Solventado o No Solventado) -->
+    <div class="form-group" id="catalogoContainer" style="display: none;">
+      <label for="catalogo">Catálogo de Soluciones:</label>
+      <select id="catalogo" name="catalogo" required>
+        <option value="">Selecciona una solución...</option>
+        <option value="Ajuste de configuración">Ajuste de configuración</option>
+        <option value="Actualización de software">Actualización de software</option>
+        <option value="Reemplazo de hardware">Reemplazo de hardware</option>
+        <option value="Capacitación al usuario">Capacitación al usuario</option>
+        <option value="Revisión de documentación">Revisión de documentación</option>
+        <option value="Otro">Otro</option>
+      </select>
+    </div>
+
+    <!-- Campo Especifique Solución (solo si el catálogo = Otro) -->
+    <div class="form-group" id="otroContainer" style="display: none;">
+      <label for="otro_texto">Especifique solución:</label>
+      <textarea id="otro_texto" name="otro_texto" rows="3"
+        placeholder="Describa la solución aplicada..."></textarea>
+    </div>
+
+    <!-- Botones -->
     <div class="btn-area">
       <button type="submit" class="btn btn-primary">💾 Guardar cambios</button>
       <a href="{{ url_for('resultados_por_rfc', rfc=rfc) }}" class="btn btn-secondary">← Regresar</a>
@@ -47,5 +73,37 @@
     <p id="confirmacion" class="confirmacion"></p>
   </form>
 </div>
+
+<!-- Lógica dinámica -->
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  const estadoSelect = document.getElementById("estado");
+  const catalogoContainer = document.getElementById("catalogoContainer");
+  const catalogoSelect = document.getElementById("catalogo");
+  const otroContainer = document.getElementById("otroContainer");
+
+  function actualizarVisibilidad() {
+    const estado = estadoSelect.value;
+    if (estado === "Solventado" || estado === "No Solventado") {
+      catalogoContainer.style.display = "block";
+    } else {
+      catalogoContainer.style.display = "none";
+      otroContainer.style.display = "none";
+      catalogoSelect.value = "";
+    }
+  }
+
+  function verificarOtro() {
+    otroContainer.style.display = catalogoSelect.value === "Otro" ? "block" : "none";
+  }
+
+  estadoSelect.addEventListener("change", actualizarVisibilidad);
+  catalogoSelect.addEventListener("change", verificarOtro);
+
+  // Inicializar visibilidad correcta al cargar la página
+  actualizarVisibilidad();
+  verificarOtro();
+});
+</script>
 {% endblock %}
 
