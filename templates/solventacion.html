@@ -28,7 +28,7 @@
     <div class="form-group">
       <label for="estado">Estado de valoración:</label>
       <select id="estado" name="estado" required>
-        <option value="Sin valoración" {% if estado_prev == 'Sin valoración' or not estado_prev %}selected{% endif %}>
+        <option value="Sin valoración" {% if estado_prev == 'Sin valoración' or not estado_prev %}selected{% endif %} disabled>
           Sin valoración
         </option>
         <option value="Solventado" {% if estado_prev == 'Solventado' %}selected{% endif %}>Solventado</option>
@@ -36,24 +36,17 @@
       </select>
     </div>
 
-    <!-- Valoración -->
-    <div class="form-group">
-      <label for="valoracion">Valoración:</label>
-      <textarea id="valoracion" name="valoracion" rows="4"
-        placeholder="Describe brevemente la valoración del caso...">{{ valoracion_prev or '' }}</textarea>
-    </div>
-
     <!-- Catálogo de Soluciones (visible solo si el estado es Solventado o No Solventado) -->
     <div class="form-group" id="catalogoContainer" style="display: none;">
       <label for="catalogo">Catálogo de Soluciones:</label>
       <select id="catalogo" name="catalogo" required>
         <option value="">Selecciona una solución...</option>
-        <option value="Ajuste de configuración">Ajuste de configuración</option>
-        <option value="Actualización de software">Actualización de software</option>
-        <option value="Reemplazo de hardware">Reemplazo de hardware</option>
-        <option value="Capacitación al usuario">Capacitación al usuario</option>
-        <option value="Revisión de documentación">Revisión de documentación</option>
-        <option value="Otro">Otro</option>
+        <option value="Ajuste de configuración" {% if catalogo_prev == 'Ajuste de configuración' %}selected{% endif %}>Ajuste de configuración</option>
+        <option value="Actualización de software" {% if catalogo_prev == 'Actualización de software' %}selected{% endif %}>Actualización de software</option>
+        <option value="Reemplazo de hardware" {% if catalogo_prev == 'Reemplazo de hardware' %}selected{% endif %}>Reemplazo de hardware</option>
+        <option value="Capacitación al usuario" {% if catalogo_prev == 'Capacitación al usuario' %}selected{% endif %}>Capacitación al usuario</option>
+        <option value="Revisión de documentación" {% if catalogo_prev == 'Revisión de documentación' %}selected{% endif %}>Revisión de documentación</option>
+        <option value="Otro" {% if catalogo_prev == 'Otro' %}selected{% endif %}>Otro</option>
       </select>
     </div>
 
@@ -61,7 +54,7 @@
     <div class="form-group" id="otroContainer" style="display: none;">
       <label for="otro_texto">Especifique solución:</label>
       <textarea id="otro_texto" name="otro_texto" rows="3"
-        placeholder="Describa la solución aplicada..."></textarea>
+        placeholder="Describa la solución aplicada...">{{ otro_texto_prev or '' }}</textarea>
     </div>
 
     <!-- Botones -->

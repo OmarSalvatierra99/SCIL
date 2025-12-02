@@ -61,6 +61,8 @@ class DatabaseManager:
                 ente TEXT NOT NULL,
                 estado TEXT NOT NULL,
                 comentario TEXT,
+                catalogo TEXT,
+                otro_texto TEXT,
                 actualizado TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(rfc, ente)
             );
@@ -98,8 +100,27 @@ class DatabaseManager:
             );
         """)
         conn.commit()
+
+        # Migrar columnas nuevas en solventaciones si no existen
+        self._migrate_solventaciones_columns(cur)
+
+        conn.commit()
         conn.close()
         print(f"✅ Tablas listas en {self.db_path}")
+
+    def _migrate_solventaciones_columns(self, cur):
+        """Agrega columnas catalogo y otro_texto a solventaciones si no existen"""
+        # Verificar si las columnas ya existen
+        cur.execute("PRAGMA table_info(solventaciones)")
+        columns = [row[1] for row in cur.fetchall()]
+
+        if 'catalogo' not in columns:
+            cur.execute("ALTER TABLE solventaciones ADD COLUMN catalogo TEXT")
+            print("  ↳ Columna 'catalogo' agregada a solventaciones")
+
+        if 'otro_texto' not in columns:
+            cur.execute("ALTER TABLE solventaciones ADD COLUMN otro_texto TEXT")
+            print("  ↳ Columna 'otro_texto' agregada a solventaciones")
 
     # -------------------------------------------------------
     # Poblar datos base
@@ -575,7 +596,7 @@ class DatabaseManager:
         conn.close()
         return data
 
-    def actualizar_solventacion(self, rfc, estado, comentario, ente="GENERAL"):
+    def actualizar_solventacion(self, rfc, estado, comentario, catalogo=None, otro_texto=None, ente="GENERAL"):
         if not ente:
             ente = "GENERAL"
         ente = self.normalizar_ente_clave(ente) or ente
@@ -585,13 +606,15 @@ class DatabaseManager:
         conn = self._connect()
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO solventaciones (rfc, ente, estado, comentario)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO solventaciones (rfc, ente, estado, comentario, catalogo, otro_texto)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(rfc, ente) DO UPDATE SET
                 estado=excluded.estado,
                 comentario=excluded.comentario,
+                catalogo=excluded.catalogo,
+                otro_texto=excluded.otro_texto,
                 actualizado=CURRENT_TIMESTAMP
-        """, (rfc, ente, estado, comentario))
+        """, (rfc, ente, estado, comentario, catalogo, otro_texto))
         filas = cur.rowcount
         conn.commit()
         conn.close()

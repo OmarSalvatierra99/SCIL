@@ -471,9 +471,11 @@ def solventacion_detalle(rfc):
 
     if request.method == "POST":
         estado = request.form.get("estado")
-        comentario = request.form.get("solventacion", "")
+        comentario = request.form.get("valoracion") or request.form.get("solventacion", "")
+        catalogo = request.form.get("catalogo")
+        otro_texto = request.form.get("otro_texto")
         ente_post = request.form.get("ente") or ente_sel
-        filas = db_manager.actualizar_solventacion(rfc, estado, comentario, ente=ente_post)
+        filas = db_manager.actualizar_solventacion(rfc, estado, comentario, catalogo=catalogo, otro_texto=otro_texto, ente=ente_post)
         log.info("Solventación rfc=%s ente=%s filas=%s", rfc, ente_post, filas)
         return redirect(url_for("resultados_por_rfc", rfc=rfc))
 
@@ -485,21 +487,25 @@ def solventacion_detalle(rfc):
     conn = db_manager._connect()
     cur = conn.cursor()
     cur.execute(
-        "SELECT estado, comentario FROM solventaciones WHERE rfc=? AND ente=?",
+        "SELECT estado, comentario, catalogo, otro_texto FROM solventaciones WHERE rfc=? AND ente=?",
         (rfc, db_manager.normalizar_ente_clave(ente_sel or "GENERAL"))
     )
     row = cur.fetchone()
     conn.close()
 
     estado_prev = row["estado"] if row else info.get("estado")
-    solventacion_prev = row["comentario"] if row else info.get("solventacion", "")
+    valoracion_prev = row["comentario"] if row else info.get("solventacion", "")
+    catalogo_prev = row["catalogo"] if row else ""
+    otro_texto_prev = row["otro_texto"] if row else ""
 
     return render_template(
         "solventacion.html",
         rfc=rfc,
         info=info,
         estado_prev=estado_prev,
-        solventacion_prev=solventacion_prev
+        valoracion_prev=valoracion_prev,
+        catalogo_prev=catalogo_prev,
+        otro_texto_prev=otro_texto_prev
     )
 
 # -----------------------------------------------------------
@@ -510,13 +516,16 @@ def actualizar_estado():
     data = request.get_json(silent=True) or {}
     rfc = data.get("rfc")
     estado = data.get("estado")
-    comentario = data.get("solventacion", "")
+    # Aceptar tanto "valoracion" como "solventacion" para compatibilidad
+    comentario = data.get("valoracion") or data.get("solventacion", "")
+    catalogo = data.get("catalogo")
+    otro_texto = data.get("otro_texto")
     ente = data.get("ente")  # opcional
 
     if not rfc:
         return jsonify({"error": "Falta el RFC"}), 400
     try:
-        filas = db_manager.actualizar_solventacion(rfc, estado, comentario, ente=ente)
+        filas = db_manager.actualizar_solventacion(rfc, estado, comentario, catalogo=catalogo, otro_texto=otro_texto, ente=ente)
         log.info("AJAX solventación rfc=%s ente=%s -> %s", rfc, ente, estado)
         return jsonify({"mensaje": f"Registro actualizado ({filas} filas)", "estatus": estado})
     except Exception as e:

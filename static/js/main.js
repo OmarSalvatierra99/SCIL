@@ -141,12 +141,24 @@ if (formSolv) {
     e.preventDefault();
     const rfc = formSolv.dataset.rfc;
     const estado = document.getElementById("estado").value;
-    const solventacion = document.getElementById("solventacion").value.trim();
+    const valoracion = document.getElementById("valoracion").value.trim();
+    const catalogo = document.getElementById("catalogo").value;
+    const otroTexto = document.getElementById("otro_texto").value.trim();
     const ente = document.querySelector('input[name="ente"]')?.value || null;
     const confirmacion = document.getElementById("confirmacion");
 
     if (!estado) {
       return setMsg("Selecciona un estado antes de guardar.", true);
+    }
+
+    // Validar que si el estado es Solventado o No Solventado, el catálogo sea obligatorio
+    if ((estado === "Solventado" || estado === "No Solventado") && !catalogo) {
+      return setMsg("Debes seleccionar una opción del Catálogo de Soluciones.", true);
+    }
+
+    // Validar que si el catálogo es "Otro", el campo otro_texto sea obligatorio
+    if (catalogo === "Otro" && !otroTexto) {
+      return setMsg("Debes especificar la solución cuando seleccionas 'Otro'.", true);
     }
 
     confirmacion.style.display = "block";
@@ -157,7 +169,7 @@ if (formSolv) {
       const res = await fetch("/actualizar_estado", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rfc, estado, solventacion, ente })
+        body: JSON.stringify({ rfc, estado, valoracion, catalogo, otro_texto: otroTexto, ente })
       });
       const data = await res.json();
 
